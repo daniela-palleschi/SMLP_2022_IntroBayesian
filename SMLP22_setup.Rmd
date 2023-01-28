@@ -1,0 +1,105 @@
+---
+title: "SMLP 2022 Set up"
+author: "Daniela Palleschi"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, eval = F)
+```
+
+## Set-up
+
+This script can be run prior to starting the book "An Introduction to Bayesian Data Analysis for Cognitive Science" by
+Bruno Nicenboim, Daniel Schad, and Shravan Vasishth. The code is based on https://vasishth.github.io/bayescogsci/book/software-needed.html
+
+## Required packages
+
+Required packages hosted on CRAN are installed below.
+
+```{r}
+# install packages hosted on CRAN
+install.packages(c(#"SIN", # SIN package was removed from the CRAN repository
+  "MASS", "dplyr", "tidyr", "purrr", "extraDistr", "ggplot2", "loo", "bridgesampling", "brms", "bayesplot", "tictoc", "hypr",   "papaja", "grid", "kableExtra", "gridExtra", "lme4", "cowplot", "pdftools", "cmdstanr", "rootSolve"))
+```
+
+Some required packages aren't available on CRAN. They are installed below.
+
+```{r}
+# From https://github.com/stan-dev/rstan/wiki/RStan-Getting-Started
+# run the next line if you already have rstan installed
+# remove.packages(c("StanHeaders", "rstan"))
+install.packages("rstan", repos = c("https://mc-stan.org/r-packages/", getOption("repos")))
+
+# run the nextline if you don't have 'devtools' already installed
+# install.packages("devtools")
+devtools::install_github("bnicenboim/bcogsci")
+
+# and cmdstanr (https://mc-stan.org/cmdstanr/)
+remotes::install_github("stan-dev/cmdstanr")
+```
+
+## Loading packages in subsequent scripts
+
+After you've first installed all packages, you can use the following code at the beginning of each subsequent script, which will load the required packages, or install them if they are missing from your library. This step only works after the packages not hosted on CRAN (rstan, bcogsci, cmdstanr) have been installed. To check that this will work in subsequent scripts, restart R ('Session > Restart R') and then run the following code chunk to see if it works.
+
+```{r}
+
+packages <- c( #"SIN", # this package was removed from the CRAN repository
+               "MASS", "dplyr", "tidyr", "purrr", "extraDistr", "ggplot2", "loo", "bridgesampling", "brms", "bayesplot", "tictoc", "hypr", "bcogsci", "papaja", "grid", "kableExtra", "gridExtra", "lme4", "cowplot", "pdftools", "cmdstanr", "rootSolve"
+  )
+
+# NB: if you haven't already installed bcogsci through devtools, it won't be loaded
+## Now load or install & load all
+package.check <- lapply(
+  packages,
+  FUN = function(x) {
+    if (!require(x, character.only = TRUE)) {
+      install.packages(x, dependencies = TRUE)
+      library(x, character.only = TRUE)
+    }
+  }
+)
+
+# this is also required, taken from the textbook
+
+## Save compiled models:
+rstan_options(auto_write = FALSE)
+## Parallelize the chains using all the cores:
+options(mc.cores = parallel::detectCores())
+# To solve some conflicts between packages
+select <- dplyr::select
+extract <- rstan::extract
+```
+
+If the code above gives you trouble, just use the chunk below. It is taken from the textbook.
+
+```{r pressure, echo=T}
+library(MASS)
+## be careful to load dplyr after MASS
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(extraDistr)
+library(ggplot2)
+library(loo)
+library(bridgesampling)
+library(brms)
+library(bayesplot)
+library(tictoc)
+library(hypr)
+library(bcogsci)
+library(lme4)
+library(rstan)
+library(cmdstanr)
+library(rootSolve)
+
+## Save compiled models:
+rstan_options(auto_write = FALSE)
+## Parallelize the chains using all the cores:
+options(mc.cores = parallel::detectCores())
+# To solve some conflicts between packages
+select <- dplyr::select
+extract <- rstan::extract
+```

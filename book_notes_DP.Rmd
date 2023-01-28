@@ -1,0 +1,947 @@
+---
+title: "SMLP 2022 Notes"
+author: "Daniela Palleschi"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    toc_float:
+      collapsed: false
+editor_options: 
+  chunk_output_type: console
+  header:                                 
+    header-includes:
+      - \usepackage{fvextra}
+      - \DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,commandchars=\\\{\}} # force code chunk line breaks
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      eval = TRUE,
+                      results = "asis",
+                      error = F,
+                      message = F,
+                      warning = F)
+```
+
+\toc
+
+# Set up{-}
+
+```{r, results = "hide", warning=F,message=F,error=F}
+# suppress scientific notation
+options(scipen=999)
+
+packages <- c( #"SIN", # this package was removed from the CRAN repository
+               "MASS", "dplyr", "tidyr", "purrr", "extraDistr", "ggplot2", "loo", "bridgesampling", "brms", "bayesplot", "tictoc", "hypr", "bcogsci", "papaja", "grid", "kableExtra", "gridExtra", "lme4", "cowplot", "pdftools", "cmdstanr", "rootSolve", "rstan"
+  )
+
+# NB: if you haven't already installed bcogsci through devtools, it won't be loaded
+## Now load or install & load all
+package.check <- lapply(
+  packages,
+  FUN = function(x) {
+    if (!require(x, character.only = TRUE)) {
+      install.packages(x, dependencies = TRUE)
+      library(x, character.only = TRUE)
+    }
+  }
+)
+
+# this is also required, taken from the textbook
+
+## Save compiled models:
+rstan_options(auto_write = FALSE)
+## Parallelize the chains using all the cores:
+options(mc.cores = parallel::detectCores())
+# To solve some conflicts between packages
+select <- dplyr::select
+extract <- rstan::extract
+```
+
+# Ch. 1 - Intro
+
+- given some data, how to use Bayes’ theorem to ***quantify uncertainty about our belief*** regarding a scientific question of interest
+- topics to be understood:
+  - the basic concepts behind probability
+  - the concept of random variables
+  - probability distributions
+  - the concept of likelihood
+
+## Probability
+
+Frequency-based versus uncertain-belief perspective of probability:
+
+1. repeatable events, like rolling a die and getting a 6, are *frequentist* because **probability** is related to the *frequency* at which we'd observe an outcome given repeated observations
+2. one-of-a-kind events, like earthquakes, don't work with this idea of probability
+  - the probability of an earthquake expresses our *uncertainty* about an event happening
+  - we also be *uncertain* about how probable an event is: being 90% sure something is 50% likely to happen
+  - this is what we're interested in: how uncertain we are of an estimate
+  
+In Bayesian analysis, we want to express our uncertainty about the probability of observing an outcome (*prior distribution*).
+
+### Conditional probability and Bayes' rule
+
+- A = "the streets are wet"
+- B = "it was raining"
+- P(A|B) = the probability of A given B
+- P(A,B) = P(A|B)P(B) (the probability of A and B happening)
+
+### Law of total probability
+
+- dunno
+
+## Discrete random variables
+
+Generating random sequences of simulated data with a binomial distribution. Imagine a cloze task, where we consider a particular word a success (1) and any other word a failure (0). If we run the experiment 20 times with a sample size of 10, the cloze probabilities for these 20 experiments would be:
+
+```{r, results="asis"}
+rbinom(10, n = 20, prob = .5)
+```
+
+For discrete random variables such as the binomial, the probability distribution *p(y|$\theta$)* is called a probability mass function (PMF) . The PMF defines the probability of each possible outcome. With *n* = 10 trials, there are 11 possible outcomes (0, 1, 2,...10 succeses). Which outcome is most probable depends on the parameter $\theta$ that represents the probability of success. Above, we set $\theta$ to `0.5`.
+
+### The mean and variance of the binomial distribution
+
+In real exerimental situations we never know the true value of $\theta$ (probability of an outcome), but it can be derived from the data: *$\theta$ hat = k/n*, where *k* = number of observed successess, *n* = number of trials, and *$\theta$ hat* = observed proportion of successes. *$\theta$ hat* = ***maximum likelihood estimate*** of the true but unknown parameter *$\theta$*. Basically, the **mean** of the binomial distribution. The **variance** can also be estimated by computing *(n($\theta$))(1 - $\theta$)*. These estimates can be be used for statistical inference.
+
+### Compute probability of a particular outcome (discrete): dibinom
+
+`dbinom` calculates probability of *k* successes out of *n* given a particular *$\theta$*.
+
+```{r}
+dbinom(5, size = 10, prob = .5)
+dbinom(5, size = 10, prob = .1)
+dbinom(5, size = 10, prob = .9)
+```
+
+With continuous data, the probability of obtaining an exact value will always be zero. We'll come ot this later.
+
+### Compute cumulative probability: pbinom
+
+The cumulative distribution function (CDF): essentially the sum of all probabilities of the values of *k* you are interested in. E.g., the probability of observing 2 successes or fewer (0, 1, or 2) is:
+
+```{r}
+# sum of probabilities for exact k's
+dbinom(0, size = 10, prob = .5) +
+  dbinom(1, size = 10, prob = .5) +
+  dbinom(2, size = 10, prob = .5)
+
+# or
+sum(dbinom(0:2, size = 10, prob = .5))
+
+# or use pbinom()
+pbinom(2, size = 10, prob = 0.5, lower.tail = TRUE)
+# conversely, what is the $\theta$ of observing THREE successes or more?
+pbinom(2, size = 10, prob = 0.5, lower.tail = F)
+# or
+sum(dbinom(3:10, size = 10, prob = .5))
+
+# the probability of observing 10 or fewer successes (out of 10 trials)
+pbinom(10, size = 10, prob = 0.5, lower.tail = TRUE)
+```
+
+### Compute the inverse of the CDF (quantile function): qbinom
+
+The quantile function (the inverse CDF) obtains the value of *k* (the quantile) given the probability of obtaining *k* or less than *k* successes given some specific probability value *p*:
+
+```{r}
+# reverse of dbinom(2,10,.5) would be:
+qbinom(0.0546875, size=10, prob=.5)
+```
+
+#### Generage simulated data from binomial distribtion: rbinom
+
+```{r}
+# given 1 iteration of 10 trials where p = .5, produce a random value of k
+rbinom(1, 10, .5)
+```
+
+## Continuous random variables
+
+Imagine vector of reading times data with a normal distribution, defined by its *mean* and its *sd*. The ***probability density function*** (PDF) for particular values of mean and sd (assuming a normal distribution) can be calculated using `dnorm`. The CDF can be found using `pnorm`, and the inverse CDF using `qnorm`. These are 3 different ways of looking at the infrmation.
+
+```{r}
+# p of observing a mean of 250ms when the true mean is 500 & sd = 100 (PDF)
+dnorm(400,mean = 500, sd = 100)
+
+# p of observing 400ms *or lower* when the true mean is 500 & sd = 100 (CDF)
+pnorm(400,mean = 500, sd = 100)
+
+# k with a CDF of 0.1586553 when the true mean is 500 & sd = 100 (inverse CDF)
+qnorm(0.1586553, mean = 500, sd = 100)
+```
+
+Question: what is the probability of observing values between 200 and 700 from a normal distribution where mean = 500 and sd = 100?
+
+```{r}
+pnorm(700,500,100) - pnorm(200,500,100)
+```
+
+With continuous data, it is only meaningful to ask about probabilities between two point values (e.g., probability that Y lies between a and b).
+
+What is the quantile *q* such that the probability of observing that value or something less (or more) than it is 0.975 (given the normal(500,100) distribution)?
+
+```{r}
+qnorm(0.975, m=500, sd=100)
+```
+
+Next task: generate simulated data. generate 10 data points using the `rnorm` function and use this simulated data to compute the mean and stanrdard devaition.
+
+```{r}
+x <- rnorm(10,500,100)
+mean(x)
+sd(x)
+
+# can also computer lower and upper bounds of 95% CIs
+quantile(x, probs = c(.025, .975))
+```
+
+### An important distinction: probability vs. densitiy in continuous random variables
+
+The probability density function (PDF):
+```{r}
+# density with default m = 0 and sd = 1
+dnorm(1)
+```
+
+This is not the probability of observing 1 in this distribution, as the probability of a single value in a continous distribtion will always be 0. This is becaue probability in a continuous distritubion is the ***area under the curve***, and at a single point there is no area under the curve (i.e., p = 0). The `pnorm` function allows us to find the cumulative distribution function (CDF) for the normal distribution.
+
+For example, the probability of obseving a value etween +/-2 in a normal distribution with mean 0 and sd 1:
+```{r}
+pnorm(2, m = 0, sd = 1) - pnorm(-2, m = 0, sd = 1)
+```
+
+For ***discrete*** random variables, the situation is different. These have a probability **mass** function (PMF), the binomial distribution that we saw before. Here, the PMF maps the possible *y* values to the probabilities of those exact values occurring.
+
+```{r}
+dbinom(2,size=10,prob=.5)
+```
+
+### Truncating a normal distribution
+
+Refers to positive values only (truncating at 0).
+
+## Bivariate and multivariate distributions
+
+Consider a case where two discrete responses were recorded: a binary yes/no response, and a Likert acceptability rating (1-7).
+
+The ***joint probability mass function*** is the joint PMF of two random variables.
+
+Let's play around with some such data:
+```{r}
+# run if package is not loaded
+# library(bcogsci)
+data("df_discreteagrmt")
+```
+
+#### Marginal distributions
+
+The marginal distribution of each pair of values (let's say *x* = the binary response, *y* = the Likert response) is computed by summing up 
+
+```{r, eval = F}
+rowSums(probs)
+```
+
+***object `probs` is not defined in the book***
+
+### Generate simulated bivariate (multivariate) data
+
+Suppose we want to generate 100 pairs of correlated data, with correlation rho = 0.6. The two random variables have mean 0, and standard deviations 5 and 10 respectively.
+
+```{r}
+## define a variance-covariance matrix:
+Sigma <- matrix(c(5^2, 5 * 10 * .6, 5 * 10 * .6, 10^2),
+  byrow = FALSE, ncol = 2
+)
+## generate data:
+u <- mvrnorm(
+  n = 100,
+  mu = c(0, 0),
+  Sigma = Sigma
+)
+head(u, n = 3)
+```
+
+```{r}
+# plot the data
+ggplot(tibble(u_1 = u[, 1], u_2 = u[, 2]), aes(u_1, u_2)) +
+  geom_point()
+```
+
+## An important concept: the marginal likelihood (integrating out a parameter)
+
+## Exercises
+
+1.1 Practice with pnorm Part 1
+
+Given a normal distribution with mean 500 and standard deviation 100, use the pnorm function to calculate the probability of obtaining values between 200 and 800 from this distribution.
+
+```{r}
+pnorm(800, mean = 500, sd = 100) - pnorm(200, mean = 500, sd = 100)
+```
+
+1.2 Practice with pnorm Part 2
+
+```{r}
+pnorm(700, 800, 150, lower.tail=T)
+pnorm(900, 800, 150, lower.tail=F)
+pnorm(800, 800, 150, lower.tail=F)
+```
+
+1.3 Practice with pnorm Part 3
+
+```{r}
+pnorm(550,600,200,lower.tail=T)
+pnorm(800,600,200,lower.tail=T) -
+  pnorm(300,600,200,lower.tail=T)
+pnorm(900,600,200,lower.tail=F)
+```
+
+Exercise 1.4 Practice using the qnorm function - Part 1
+
+```{r}
+qnorm(c(.1,.9),mean=1,sd=1)
+```
+
+Exercise 1.5 Practice using the qnorm function - Part 2
+
+```{r}
+qnorm(c(.1,.9), mean=650, sd=125)
+```
+
+Exercise 1.6 Practice getting summaries from samples - Part 1
+
+```{r}
+data_gen1 <- rnorm(1000, 300, 200)
+
+# mean
+mean(data_gen1)
+# sd
+sd(data_gen1)
+
+# q1 and q2
+qnorm(c(.1,.9), mean(data_gen1), sd(data_gen1))
+
+hist(data_gen1)
+```
+
+Exercise 1.7 Practice getting summaries from samples - Part 2
+
+```{r}
+# generate data with truncated normal distribution
+data_gen1 <- rtnorm(1000, 300, 200, a = 0)
+
+# mean
+mean(data_gen1)
+# sd
+sd(data_gen1)
+
+# q1 and q2
+qnorm(c(.1,.9), mean(data_gen1), sd(data_gen1))
+
+hist(data_gen1)
+```
+
+Exercise 1.8 Practice with a variance-covariance matrix for a bivariate distribution
+
+# Ch. 2 - Introduction to Bayesian data analysis
+
+***A crucial point:*** the posterior distribution of a parameter is a compromise between the prior and the likelihood.
+
+## Bayes' rule
+
+## Deriving the posterior using Bayes' rule
+
+The Bayesian framework gives us the opportunity to talk directly about our uncertainty of the parameter, given the data. This is achieved by obtaining the posterior distribution of the parameter using Bayes’ rule, as we show below.
+
+### Choosing a likelihood
+
+### Choosing a prior for $\theta$
+
+The beta distribution's parameters *a* and *b* express our prior beliefs about the probability of success; *a* = number of successes (choosing the word 'umbrella' in the cloze probability task) and *b* the number of failures (not choosing 'umbrella').
+
+We can express our uncertainty by computing the region over which we are 95% certain that the value of the parameter lies (***95\% credible interval***):
+
+```{r}
+# shape1 = a (prior of number of sucesses)
+# shape2 = a (prior of number of failures)
+qbeta(c(0.025,0.975), shape1 = 4, shape2 = 4)
+
+qbeta(c(0.025,0.975), shape1 = 10, shape2 = 10)
+```
+
+If we don't have much prior information, we could use a = 1 and b = 1, giving us a uniform prior. It is sometimes called a *flat prior*, *non-informative* or *uninformative prior*. 
+
+```{r}
+qbeta(c(0.025,0.975), shape1 = 1, shape2 = 1)
+```
+
+## Exercises
+
+Exercise 2.1 Deriving Bayes’ rule
+
+# Ch. 3 - Computational Bayesian analysis
+
+## Deriving the posteriror through sampling
+
+- obtaining samples from the posterior will be the only viable option in the models discussed in this book
+  - "obtaining samples" means talking about a situation analogous to when we use `rbinom` or `rnorm` to obtain samples from a particular distribution
+  
+### Bayesian Regression models using Stan: brms
+
+- Stan is a probabilistic programming language that allows the user to define models without have to deal with the complexities of the sampling process
+- the R package `brms` provides Bayesian equivalents of e.g., (g)lmer using Stan as the back-end for estimation and sampling (same with the package `rstanarm`)
+
+#### A simple linear model: single subject pressing a button repeatedly
+
+Imagine a scenario where a single participant is just hitting the spacebar as fast as possible without paying attention to stimuli. Let's model the data with the following assumptions:
+
+1. There is a true (unknown) underlying time, $\mu$, that the subject needs to press the spacebar
+2. There is some noise in this process
+3. The noise is normally distributed (this is questionble given that RTs are generally skewed, this will be fixed later)
+
+A simple linear model would be:
+
+```{r, echo = T, eval = F}
+lm(rt ~ 1, data)
+```
+
+For a Bayesian linear model, we also need to define priors for the two parameters of our model. Let's say we know for sure that the time it takes to press a key will be positive and lower than a minute (i.e., 60 000ms), but we don't want to make a commitment regarding which values are more likely. We ***encode what we know about the noise in the task in $\sigma$***: we know this parameter must be positive and we assume that any value below 2000ms is equally likely. These priors are in general strongly discouraged: a flat (or very wide) prior will almost never be the best approximation of what we know. More on this is discussed in chapter 6.
+
+Load in `df_spacebar`, and produce a density plot or the RTs to see the distribution. Yup, data is positively skewed (to be expected).
+
+```{r}
+data("df_spacebar")
+```
+
+```{r, fig.height=4}
+ggplot(df_spacebar, aes(rt)) +
+  geom_density() +
+  xlab("response times")+
+  ggtitle("Button-press data")
+```
+
+##### Specifying the model in brms
+
+Fit the model with brms. For now, we'll ignore that the uniform distribution is not appropriate for this data.
+
+```{r}
+fit_press <- brm(rt ~ 1,
+                  data = df_spacebar,
+                  family = gaussian(),
+                  prior = c(
+                    prior(uniform(0, 60000), class = Intercept),
+                    prior(uniform(0, 2000), class = sigma)
+                    ),
+                  chains = 4,
+                  iter = 2000,
+                  warmup = 1000
+                  )
+```
+
+Some differences between `brm` and `lm`:
+
+1. `family = gaussian` makes it explicit that the underlying likelihood function is a normal distribution (Gaussian = normal); this is implicit in lm
+2. the term `prior` takes as argument a vector of priors. This is optional, but researchers should always explicitly specify each prior to avoid brms specifying them by default
+3. the term `chains` refers to the # of independent runs for samplying (by default = 4)
+4. the term `iter` = # of iterations that the sampler makes to sample from the posterior distriubtion of each parameter (default = 2000)
+5. the term `warmup` = the # of iterations from the start of sampling that are eventually discarded (default = half of `iter`)
+
+The last 3 options (together with `control`) determine the behaviour of the sampling algorithm. This is discussed more in Ch. 10, but the basic process is discussed next.
+
+###### Sampling and convergence in a nutshell
+
+The 4 chains specified in the model are started independently from each other. Each "searches" for samples of the posterior distribution. Trace/caterpillar plots show the path of the chains from the warmup phase onward. One should only inspect the chain after the point where convergence has been achieved. A visual diagnostic check (caterpillar plot) should look like a "fat hairy caterpillar".
+
+Stan also runs some diagnostics, so if there are no warnings after fitting a model and the trace plots look  fine, we can be reasonably sure the model converged, and that our samples are from the true posterior distribution. However, **it is necessary to run more than one chain (preferably 4), with a couple thousand iterations (at least) in order for the diagnostics to work**.
+
+###### Output of brms
+
+If the model has been fit and no convergence warning  messages were produced, we can print out ehsa mples of the posterior distributions of each of the parameters:
+
+```{r, eval = F, echo = T, results = "asis"}
+as_draws_df(fit_press)
+```
+
+the term `b_Intercept` corresponds to our $\mu$, and `lp` is not really part of the posterior but is the density of the unnormalised log posterior for each iteration. It will be discussed later in Ch. 10.
+
+We can also plot the density and trace plot of each parameter *after* warmup:
+
+```{r, eval = T, echo = T, results = "asis"}
+plot(fit_press)
+```
+
+brms provides a nice sumamry:
+
+```{r, eval = T, echo = T, results = "asis"}
+fit_press
+```
+
+The Estimate is the mean of the posterior, and the CIs correspond to ***credible*** intervals. We'll use CrIs to distinguish them from confidence intervals.
+
+Our model fit without problems, and we get some posterior distributions for our parameters. But we have the following questions:
+
+1. What info are the priors encoding? Do the priors make sense?
+2. Does the likelihood assumed int he model make sense for the data?
+
+## Prior predictive distribution
+
+We had the following priors for our linear model:
+
+- $\mu$ will be between 0 and 60000ms
+- $\sigma$ will be between 0 and 2000ms
+
+When data is generated from the model, it is generated entirely by the prior distributions, and is called the **prior predictive distribution**. Generating prior predictive distributions repeatedly helps us check whether the priors make sense. Do the priors generate realistic-looking data?
+
+A way to generage prior predictive distributions is to repeat the following many times:
+
+1. Take one sample from each of the priors
+2. Plug those samples into the probability density/mass function to generate a data set
+
+Each sample is an imaginary or potential data set.
+
+The following function does this:
+
+```{r}
+normal_predictive_distribution <- 
+  function(mu_samples, sigma_samples, N_obs) {
+  # empty data frame with headers:
+  df_pred <- tibble(
+    trialn = numeric(0),
+    rt_pred = numeric(0),
+    iter = numeric(0)
+  )
+  # i iterates from 1 to the length of mu_samples,
+  # which we assume is identical to
+  # the length of the sigma_samples:
+  for (i in seq_along(mu_samples)) {
+    mu <- mu_samples[i]
+    sigma <- sigma_samples[i]
+    df_pred <- bind_rows(
+      df_pred,
+      tibble(
+        trialn = seq_len(N_obs), # 1, 2,... N_obs
+        rt_pred = rnorm(N_obs, mu, sigma),
+        iter = i
+      )
+    )
+  }
+  df_pred
+}
+```
+
+The following produces 1000 samples of our model `fit_space`. It is a bit slow, but a more efficient version is available in Box 3.1 of the textbook (describing the `purr::map_` function that is about 10x faster).
+
+```{r}
+N_samples <- 1000
+N_obs <- nrow(df_spacebar)
+mu_samples <- runif(N_samples, 0, 60000)
+sigma_samples <- runif(N_samples, 0, 2000)
+tic()
+prior_pred <- normal_predictive_distribution(
+  mu_samples = mu_samples,
+  sigma_samples = sigma_samples,
+  N_obs = N_obs
+)
+toc()
+
+#prior_pred
+```
+
+Alternatively, use `purr::map2_dfr`:
+
+```{r}
+library(purrr)
+# Define the function:
+normal_predictive_distribution <- function(mu_samples,
+                                           sigma_samples,
+                                           N_obs) {
+  map2_dfr(mu_samples, sigma_samples, function(mu, sigma) {
+    tibble(
+      trialn = seq_len(N_obs),
+      rt_pred = rnorm(N_obs, mu, sigma)
+    )
+  }, .id = "iter") %>%
+    # .id is always a string and
+    # needs to be converted to a number
+    mutate(iter = as.numeric(iter))
+}
+# Test the timing:
+tic()
+prior_pred <- normal_predictive_distribution(
+  mu_samples = mu_samples,
+  sigma_samples = sigma_samples,
+  N_obs = N_obs
+)
+toc()
+
+#prior_pred
+```
+
+Regardless of how it's generated, we can plot some samples from the prior predictive distribution of the defined model. These are not realistic: the RT distributions are symmetrical (but they should be right-skewed), some also have unrealistically long RTs. A few data sets also have negative response time values (but we don't see them int  the plots)
+
+```{r}
+prior_pred %>%
+  filter(iter <= 18) %>%
+  ggplot(aes(rt_pred)) +
+  geom_histogram(aes(y=..density..)) +
+  xlab("predicted rt (ms)")+
+  theme(axis.text.x = element_text(angle=40,vjust=1,hjust=1,size=14))+
+  scale_y_continuous(limits=c(0, 0.0005),
+                     breaks= c(0, 0.00025,0.0005),     name="density")+
+  facet_wrap(~iter, ncol = 3)
+```
+
+Our priors indicated that any mean between 0 and 60000 was equally likely, but we know that for such a task a mean close to 0 or to 60000ms would be extremely suprising. The question is then: what priors should we have chosen? Let's consider this next.
+
+## The influence of priors: sensitivity analysis
+
+For most cases in this textbook, therea re 4 main classes of priors to be chosen from.
+
+### Flat, uninformative priors
+
+These are priors that are uninformative. The idea behind this is to let the data 'speak for itself' and to not bias the statistical inference with 'subjective' priors. Problems: the prior is as subjective as the likelihood, and different choices of likelihood might have a stronger impact onthe posterior than choices of priors. Also, uniformative priors are in general unrealistic because they give equal weight to all values within te spport of the prior distribution, ignoring the fact that usually there is some minimal information about the parameters. Usually, the order of magnitude is known (e.g., RTs are in milliseconds not days, EEG signals comes in microvolts and not volts, etc.). Third, uniformative priors make sampling slower and might lead to convergence problems! Unless there is a large amount of data, it would be wise to avoid these priors.
+
+For our spacebar data, an example of an uninformative prior would be $\mu$ = -10^20, $\sigma$ = 10^20.
+
+### Regularising priors
+
+If there's not much prior information (or cannot be worked out through reasoning about the problem), and tehre is enough data, it is fine to use *regularising priors* (or *weakly informative*/*mildly informative* priors). These down-weight extreme values (i.e., provide regularisation), they are usually not very informative, and mostly let the likelihood dominate in determining posteriors. They are **theory neutral**: they usually don't bias the parameters to values supported by any prior belief or theory.
+
+For our spacebar data, an example of an regularising prior would be $\mu$ = 0, $\sigma$ = 1000.
+
+### Principled priors
+
+These are priors that encode all (or most of) the theory-neutral information that the researcher has. It is possible to build priors that truly reflect the properties of potential data sets, using prior predictive checks.
+
+For our spacebar data, an example of an regularising prior would be $\mu$ = 250, $\sigma$ = 100.
+
+### Informative priors
+
+There are cases where a lot of prior knowledge exists, but not much data, such as clinical populations where we can't get many subjects, but there are a lot of previously published papers. Unless there are very good reasons for having informative priors, it's not a good idea to let the priors have too much influence on the posterior.
+
+For our spacebar data, an example of an informative prior would be $\mu$ = 200, $\sigma$ = 20.
+
+In practical data analysis, we will mostly choose priors between regularising and principled. Informative priors become more important when doing Bayes factor analysis.
+
+## Revisiting the button-press paradigm with different priors
+
+What would  happen if we had defined even wider priors than what we did already in our model? Say, every mean between -10^10 and 10^10 is assumed to be equally likely? And say the standard deviation is between 0 and 10^10?
+
+```{r}
+# We fit the model with the default setting of the sampler:
+# 4 chains, 2000 iterations with half of them as warmup.
+fit_press_unif <- brm(rt ~ 1,
+  data = df_spacebar,
+  family = gaussian(),
+  prior = c(
+    prior(uniform(-10^10, 10^10), class = Intercept),
+    prior(uniform(0, 10^10), class = sigma)
+  )
+)
+
+fit_press_unif
+```
+
+Alternatively, what if very informative priors are used? Assume that mean values very close to 400ms are most likely, and that the standard deviation of the response times is very close to 100. Given button-pressing times, this seems unlikely, 200 would be more realistic than 400ms.
+
+```{r}
+fit_press_inf <- brm(rt ~ 1,
+  data = df_spacebar,
+  family = gaussian(),
+  prior = c(
+    prior(normal(400, 10), class = Intercept),
+    # brms knows that SDs need to be bounded 
+    # to exclude values below zero:
+    prior(normal(100, 10), class = sigma)
+  )
+)
+
+fit_press_inf
+```
+
+Despite ***unrealistic but informative priors***, the likelyhood mostly dominates and the new posterior means and CrIs are just a couple of milliseconds way from the previous estimates.
+
+Now, let's try some principled priors. Something like a mean around 200ms with a 95% probability of the mean ranging from 0 to 400, allowing for a bit more uncertainty (this kind of conservativit is sometimes called Cromwell's rule).
+
+What makes these priors principled? This largely depends on *domain knowledge*. This is discussed more in Ch. 6.
+
+```{r}
+fit_press_reg <- brm(rt ~ 1,
+  data = df_spacebar,
+  family = gaussian(),
+  prior = c(
+    prior(normal(200, 100), class = Intercept),
+    prior(normal(50, 50), class = sigma)
+  )
+)
+
+fit_press_reg
+```
+
+## Posterior predictive distribution
+
+The **prior predictive distribution** is a collection of data sets generated from the *model* (the likelihood and priors).  Having obtained the **posterior distributions** of the parameters after taking into account the *data*, the posterior distributions can be used to generate future data from the model.
+
+The main difference between this and generating samples from the posterior predictive distribution is that we're sampling $\mu$ and $\sigma$ from the posterior (i.e., data), rather than from the priors.
+
+```{r}
+N_obs <- nrow(df_spacebar)
+mu_samples <- as_draws_df(fit_press)$b_Intercept
+sigma_samples <- as_draws_df(fit_press)$sigma
+normal_predictive_distribution(
+  mu_samples = mu_samples,
+  sigma_samples = sigma_samples,
+  N_obs = N_obs
+)
+```
+
+The `brms` function `posterior_predict()` also does this: `posterior_predict(fit_press)`, yields the predicted response times in a matrix.
+
+The *posterior predictive distribution* can be used to examine the descriptive adequacy of the model.  This is called **posterior predictive checks**. The goal is to see whether the posterior predictive data look similar to the observed data. If so, this means that the current data could have been generated by the model. Passing this test is not necessarily strong evidence in favour of a model, but a failure of this test can be interpreted as strong evidence against a model.
+
+In many cases, we can use the plot functions built into `brms`: ``pp_check` displays different visauliations of posterior predictive checks of a model.
+
+```{r}
+pp_check(fit_press, ndraws = 11, type = "hist")
+```
+
+```{r}
+pp_check(fit_press, ndraws = 100, type = "dens_overlay")
+```
+
+The data is slightly skewed and has no values smaller than 100ms, but the predictive distributions are centered and symmetrical. There is also a slight mismatch between the observed and predicated data. Can a better model be built?
+
+### Comparing different likelihoods
+
+Let's use the log-transform, since RT data are usually log-normal.
+
+### The log-normal likelihood
+
+```{r}
+mu <- 6
+sigma <- 0.5
+N <- 500000
+# Generate N random samples from a log-normal distribution
+sl <- rlnorm(N, mu, sigma)
+ggplot(tibble(samples = sl), aes(samples)) +
+  geom_histogram(aes(y = ..density..), binwidth = 50) +
+  ggtitle("Log-normal distribution\n") +
+  coord_cartesian(xlim = c(0, 2000))
+# Generate N random samples from a normal distribution,
+# and then exponentiate them
+sn <- exp(rnorm(N, mu, sigma))
+ggplot(tibble(samples = sn), aes(samples)) +
+  geom_histogram(aes(y = ..density..), binwidth = 50) +
+  ggtitle("Exponentiated samples from\na normal distribution") +
+  coord_cartesian(xlim = c(0, 2000))
+```
+
+### Re-fitting a single subject pressing a button with a log-normal likelihood
+
+We need to change the scale of our priors if working with transformed data!
+
+```{r}
+N_samples <- 1000
+N_obs <- nrow(df_spacebar)
+mu_samples <- runif(N_samples, 0, 11)
+sigma_samples <- runif(N_samples, 0, 1)
+prior_pred_ln <- normal_predictive_distribution(
+  mu_samples = mu_samples,
+  sigma_samples = sigma_samples,
+  N_obs = N_obs
+) %>%
+  mutate(rt_pred = exp(rt_pred))
+```
+
+# Ch. 4 - Bayesian regression models
+
+- focussing on simple regression models with different likelihood functions
+
+## A first linear regression: Does attetional load affect pupil size?
+
+- it has been found that increased cognitive load leads to an increase in the pupil size
+
+```{r}
+data("df_pupil")
+```
+
+### Likelihood and priors
+
+- not expecting a skew: model pupil size as Gaussian (although pupil size cannot be negative, so this isn't exactly right)
+- we will also assume a linear relationship between cognitive load and pupil size, for the sake of simplicity
+
+Our assumptions are then:
+
+1. There is osme average pupil size represented by $\alpha$
+2. The increase of attentional load has a linear relationship with pupil size, determined by $\beta$
+3. There is osme noise in this process, that is, variability around thet rue pupil size, i.e., a scale, $\sigma$
+4. The noise is normally distributed
+
+So the formula we'll be using in brms is:
+
+```{r, eval = F}
+p_size ~ 1 + c_load
+```
+
+where 1 represents the intercept, $\alpha$, which doesn't depend on the predictor, and c_load is the predictor that is multiplied by $\beta$. We use c_ to indicate the predictor is centered (i.e., we subtract from each value the mean of all values). If the load is centered, the intercept represents the pupil size at the average load int he experiment (because at the average load, the centered load is zero, and $\alpha$ + 0x$\beta$). Alternatively, if the load had not been centered (i.e., starts with no load, then one, two, etc.), the the intercept would represent the pupil size when there is no load. Although we can fit a frequentist model with `lm(p_size ~ 1 + c_load, data_set)`, when we fit a Bayesian model, we have to **specify priors for each of the parameters**.
+
+For the **priors**, we need to do ome research and find some information about pupil sizes (which are measured in arbitrary units in the Eyeink-II eye-tracker). Fortunately we have some measurements of the same subject with no attentional load for the first 100ms, measured every 10ms. This will give us some idea about the order of magnitude of our dependent variable.
+
+```{r}
+data("df_pupil_pilot")
+df_pupil_pilot$p_size %>% summary()
+```
+
+Set a regularising prior for $\alpha$: center the prior around 100 to be in the right order of magnitude. We don't know yet by how much pupil sizes will vary by load yet, so let's include a rather wide prior by defining it as a normal distribution and settings its standard deviation as 500.
+
+\begin{equation}
+\alpha \sim \mathit{Normal}(1000, 500) 
+\end{equation}
+
+Given that our predictor load is centered, witht he prior for $\alpha we say that we suspect that the average pupil size for the average load in our experiment will be in 95% CrI limited by approx. 1000 ± 2 x 500 = [0,2000] units, or:
+
+```{r}
+qnorm(c(.025,.975), mean = 1000, sd = 500)
+```
+
+Our prior for $\sigma$ is quite uninformative so as to encode our lack of precise information: $\sigma$ is surely larger than zero and has to be in the order of magnitude of the pupil size with no load:
+
+\begin{equation}
+\sigma \sim \mathit{Normal}_+(0, 1000)
+\end{equation}
+
+(Normal plus indicates positive values only.) This is saying we expect the standard deviation of the pupil sizes to be in the following 95% CrI:
+
+```{r}
+extraDistr::qtnorm(c(.025,.975), mean = 0, sd = 1000, a = 0)
+# a = 0 indicates a truncated normal distribution (truncaed at the left by zero, meaning no negative values)
+```
+
+We still need to set a prior for $\beta$, the change in pupil size produced by the attentional load. Given that pupil size changes are not easily perceptible (so they're pretty small), we expect them to be much smaller than the pulil size (which we assume has a mean of 1000 units), so here is our prior:
+
+\begin{equation}
+\beta \sim \mathit{Normal}(0, 100)
+\end{equation}
+
+Here we are saying we don't really know if the attentional load will i ncrease or even decrease the pupil size (it is centered at zero), but we do know that one unit of load will potentially change the pupil size in a way that is consistent with the following 95% CrI:
+
+```{r}
+qnorm(c(.025,.975), mean = 0, sd = 100)
+```
+
+In other words, we don't expect changes in size more than plur or minus 200 units for one unity increase in load. These priors are pretty uniformative still, because we don't have much prior experience with pupil size studies.
+
+### The `brms` model
+
+First, load the data and center the predictor:
+
+```{r}
+data("df_pupil")
+df_pupil <- df_pupil %>%
+  mutate(c_load = load - mean(load))
+```
+
+Now fit the brm model:
+
+```{r}
+fit_pupil <- brm(p_size ~ 1 + c_load,
+                 data = df_pupil,
+                 family = gaussian,
+                 prior = c(
+                   prior(normal(1000,500), class = Intercept),
+                         prior(normal(0,1000), class = sigma),
+                         prior(normal(0,100), class = b, coef = c_load)
+                         )
+                 )
+```
+
+Here, `class = b` indicates priors for predictors, and `coef = c_load` specifies the predictor (in case you have more than one). If we want to indicate the same priors to different predictors, we just omit `coef`. Just like with `lmer`, we can omit the 1.
+
+Now plot the output of our model. The poseriors and trace plots will be produced:
+
+```{r}
+plot(fit_pupil)
+```
+
+```{r}
+fit_pupil
+```
+
+Plot regression line:
+
+```{r}
+ggplot(df_pupil, aes(x=c_load, y=p_size)) + 
+  geom_point()+
+  geom_smooth(method=lm) +
+  theme_bw()
+```
+
+### How to communicate results
+
+RQ was: "What is the effect of attentional load on the subject's pupil size?" We need to examine what happens with the posterior ditributon of $\beta$, which is printed out as c_load int he summary of brms. The summary of the posterior tells us that themostl ikely values of $\beta$ will be around the men of the posterior, 33.6, and that we can be 95% certain that the value of $\beta$, given the model and the data, lies betwee 9.51 and 56.71.
+
+We see that as the attentional load increases, the pupil size of the subject becomes larger. If we want to determine how likely it is that the pupil size increased rather than decreased, we can examine the proportion of sampels above zero. N.B., the intercept and slopes are always preceded by b_ in brms. You can see all the names of paramters being estimated with variables(model).
+
+```{r}
+variables(fit_pupil)
+```
+
+```{r}
+mean(as_draws_df(fit_pupil)$b_c_load > 0)
+```
+
+This high probability means that it is much more likely that the effect is positive rather than negative.
+
+### Descriptive adequacy
+
+Our model converged and we obtained a posterior distribution. But we can use ***posterior predictive checks*** to **check the descriptive adequacy of the model**.
+
+```{r}
+for (l in 0:4) { # for each level of the predictor load
+  df_sub_pupil <- filter(df_pupil, load == l)
+  p <- pp_check(fit_pupil,
+    type = "dens_overlay",
+    ndraws = 100,
+    newdata = df_sub_pupil
+  ) +
+    geom_point(data = df_sub_pupil, aes(x = p_size, y = 0.0001)) +
+    ggtitle(paste("load: ", l)) +
+    coord_cartesian(xlim = c(400, 1000))
+  print(p)
+}
+```
+
+In these plots we see we don't have enough data to derive a strong conclusion: both the predictive distributions and our data look very widely spread ou, and it's hard to tell if the distribution of the obsevations could have been generated by our model. Let's say for now it doesn't look too bad.
+
+We can also look at the distribution of a summary statistic like mean pupil size by load:
+
+```{r}
+for (l in 0:4) {
+  df_sub_pupil <- filter(df_pupil, load == l)
+  p <- pp_check(fit_pupil,
+    type = "stat",
+    ndraws = 1000,
+    newdata = df_sub_pupil,
+    stat = "mean"
+  ) +
+    geom_point(data = df_sub_pupil, aes(x = p_size, y = 0.0001)) +
+    ggtitle(paste("load: ", l)) +
+    coord_cartesian(xlim = c(400, 1000))
+  print(p)
+}
+```
+
+Here we see that the means for a load level of 0 and of 1 fall in the tails of the distributions. This could indicate that the relevant different is simply between no laod and some load, even though our model predicts a monotonic increase of pupil size.
+
+## Log-normal model: Does trial affect response time?
+
+## Logistic regression: does set size affect free recall?
+
+Extending what we've learned so far to *generalised* linear models, focussing on one special case of GLMs that has wide application in linguistics and psychology: logistic regression.
+
+# Ch. 5: Bayesian hierarchical models
+

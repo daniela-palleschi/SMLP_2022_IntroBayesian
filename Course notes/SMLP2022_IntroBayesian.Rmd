@@ -1,0 +1,1889 @@
+---
+title: "SMLP 2022 - Intro Bayesian: Lecture notes"
+author: "Daniela Palleschi"
+date: "`r Sys.Date()`"
+# output: pdf_document
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    number_sections: false
+    toc_float:
+      collapsed: false
+header-includes:
+ \usepackage{hyperref}
+  \usepackage{booktabs}
+  \usepackage{array}
+    \usepackage{caption}
+    \usepackage[flushleft]{threeparttable}
+    \usepackage{multirow,graphicx}
+    \usepackage{fvextra}
+    \DefineVerbatimEnvironment{Highlighting}{Verbatim}{breaklines,commandchars=\\\{\}}
+editor_options: 
+  chunk_output_type: console
+  markdown: 
+    wrap: 72
+---
+
+# Set-up {-}
+
+Run this chunk first.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,
+                      eval = T,
+                      error = F,
+                      warning = F,
+                      message = F)
+options(scipen=999)
+
+# suppress scientific notation
+options(scipen=999)
+
+packages <- c( #"SIN", # this package was removed from the CRAN repository
+               "MASS", "dplyr", "tidyr", "purrr", "extraDistr", "ggplot2", "loo", "bridgesampling", "brms", "bayesplot", "tictoc", "hypr", "bcogsci", "papaja", "grid", "kableExtra", "gridExtra", "lme4", "cowplot", "pdftools", "cmdstanr", "rootSolve", "rstan"
+  )
+
+# NB: if you haven't already installed bcogsci through devtools, it won't be loaded
+## Now load or install & load all
+package.check <- lapply(
+  packages,
+  FUN = function(x) {
+    if (!require(x, character.only = TRUE)) {
+      install.packages(x, dependencies = TRUE)
+      library(x, character.only = TRUE)
+    }
+  }
+)
+
+# this is also required, taken from the textbook
+
+## Save compiled models:
+rstan_options(auto_write = FALSE)
+## Parallelize the chains using all the cores:
+options(mc.cores = parallel::detectCores())
+# To solve some conflicts between packages
+select <- dplyr::select
+extract <- rstan::extract
+```
+
+# Day 1
+
+-   se = $\sigma$/sqrt(n)
+-   Type M (for magnitude) error happens when power is low
+
+|        | H0 True                  | H0 False               |
+|--------|--------------------------|------------------------|
+| Accept | All good                 | Type II<br>1 - $\beta$ |
+| Reject | Type I<br>$\alpha$ = .05 | Power<br>$\beta$       |
+
+## Lecture 1.1 - Discrete random variables
+
+In addition to r/d/pbinom, we can use r/d/pbern (for Bernoulli, but
+since Bernoulli = binomial these two families of functions are
+identical).
+
+```{r}
+extraDistr::rbern(n = 10, prob = .5)
+```
+
+```{r}
+# probability for possible outcomes (0 or 1, 'cause binomial)
+extraDistr::dbern(0, prob = .7)
+extraDistr::dbern(1, prob = .7) 
+# probability of getting a success (=1) or failure (=0) given the probability of .7 (e.g., if probability of tossing a coin and gatting a tails is .7 for some reason, then for a single coin toss what is the probability of getting a 1 or 0, given prob = .7?)
+```
+
+And cumulative probability distribution function with the bern family of
+functions:
+
+```{r}
+extraDistr::pbern(1.,p=.5)
+```
+
+## Lecture 1.2: Discrete random variables (the binomial)
+
+## Lecture 1.3: Continuous random variables
+
+p/d/rnorm family of functions for continuous:
+
+```{r}
+# probability density function (PDF)
+dnorm( # probability of observing
+  400, # 400ms
+  mean = 500, # when the true mean is 500
+  sd = 100) # and the sd is 100
+```
+
+```{r}
+# cumulative density function (CDF)
+pnorm( # probability of observing
+  400, # 400ms *or lower*
+  mean = 500, # when the true mean is 500
+  sd = 100) # and the sd is 100
+```
+
+```{r}
+# inverse cumulative density function (iCDF)
+qnorm( # k (quantile) with a CDF of
+  0.543, # 0.543
+  mean = 500, # when the true mean is 500
+  sd = 100) # and the sd is 100
+```
+
+(at this point my notes are no longer linked to a particular lecture)
+
+Once you've generated a prior, these functions come in handy.
+
+```{r, echo = F, fig.height=4}
+curve(dnorm(x,0,1), xlim=c(-3,3), main="Normal(0,1)",
+      ylab="density")
+from.z <- -1
+to.z <- 1
+
+S.x  <- c(from.z, seq(from.z, to.z, 0.01), to.z)
+S.y  <- c(0, dnorm(seq(from.z, to.z, 0.01)), 0)
+polygon(S.x,S.y, col=rgb(1, 0, 0,0.3))
+text(-2,0.15,pos=4,cex=1.5,paste("pnorm(1)-pnorm(-1)"))
+arrows(x1=2,y1=0.3,x0=1,y0=dnorm(1),code = 1)
+text(1.7,0.32,pos=4,cex=1.5,paste("dnorm(1)"))
+points(1,dnorm(1))
+#points(1,0)
+arrows(x1=2,y1=0.1,x0=1,y0=0,code = 1)
+text(1,0.12,pos=4,cex=1.5,paste("qnorm(0.841)"))
+x<-rnorm(10)
+points(x=x,y=rep(0,10),pch=17)
+text(-3,0.05,pos=4,cex=1.5,paste("rnorm(10)"))
+arrows(x1=-2.5,y1=0.03,x0=min(x),y0=0,code = 1)
+```
+
+-   common misunderstanding of the **maximum likelihood estimate
+    (MLE)**: it doens't represent the true value of $\theta$, because
+    it's the MLE (best guess) for the *data you have*
+    -   but the MLE will be closer to the true value of $\theta$ as
+        sample size increases
+
+## Bivariate and multivariate distributions (discrete)
+
+-   joint probability mass function (joint PMF): for when we are
+    considering *pairs* of observations
+
+## Bivariate and multivariate distributions (continuous)
+
+-   consider 2 random variables, X and Y, each with a normal
+    distribution, e.g., each have the distribution *Normal*(0,1), each     with 1000 observations. In this case, they're completely
+    uncorrelated:
+
+```{r}
+x <- rnorm(1000,0,1)
+y <- rnorm(1000,0,1)
+
+plot(x,y)
+cor(x,y)
+```
+
+If we want to describe a correlation between these two, we can find
+their **joint distribution** (bivariate distribution)
+
+-   **covariance** of two random variables = correation x sd of each
+    variable:
+    $\rho$\*$\sigma$\textsubscript{x}\*$\sigma$\textsubscript{y}
+
+```{r}
+# calculate covariance of observed x and y:
+cor(x,y)*sd(x)*sd(y)
+# or simply use the cov() function
+cov(x,y)
+```
+
+### Generate simulated bivariate data
+
+```{r}
+## define a variance-covariance matrix:
+Sigma <- matrix(c(5^2, 5 * 10 * .6, 5 * 10 * .6, 10^2),
+byrow = FALSE, ncol = 2
+)
+## generate data:
+u <- MASS::mvrnorm(n = 100, # 100 data points
+                   mu = c(0, 0), # means for 2 variables
+                   Sigma = Sigma) # make sigma the matrix we just defined
+# MASS::mvrnorm = "multivariate rnorm"
+plot(u[,1],u[,2])
+head(u, n = 3)
+
+# and if we have a NEGATIVE correlation?
+## define a variance-covariance matrix:
+SigmaM <- matrix(c(5^2, 5 * 10 * -.6, 5 * 10 * -.6, 10^2),
+byrow = FALSE, ncol = 2
+)
+## generate data:
+uM <- MASS::mvrnorm(n = 100, # 100 data points
+                   mu = c(0, 0), # means for 2 variables
+                   Sigma = SigmaM) # make sigma the matrix we just defined
+# MASS::mvrnorm = "multivariate rnorm"
+plot(uM[,1],uM[,2])
+head(uM, n = 3)
+
+# and if we have correlation of 0?
+## define a variance-covariance matrix:
+Sigma0 <- matrix(c(5^2, 5 * 10 * 0, 5 * 10 * 0, 10^2),
+byrow = FALSE, ncol = 2
+)
+## generate data:
+u0 <- MASS::mvrnorm(n = 100, # 100 data points
+                   mu = c(0, 0), # means for 2 variables
+                   Sigma = Sigma0) # make sigma the matrix we just defined
+# MASS::mvrnorm = "multivariate rnorm"
+plot(u0[,1],u0[,2])
+head(u0, n = 3)
+```
+
+```{r}
+library(bcogsci)
+data("df_gibsonwu")
+head(df_gibsonwu)
+
+df_gibsonwu$cond <- ifelse(df_gibsonwu$type=="obj-ext",-.5,+.5)
+
+m <- lme4::lmer(rt~cond + (1+cond|subj) + (1+cond|item), data = df_gibsonwu)
+summary(m)
+```
+
+From the output:
+
+```{r}
+# Random effects:
+#  Groups   Name        Variance Std.Dev. Corr
+#  subj     (Intercept)  25725   160.4        
+#           cond         37966   194.8    1.00
+```
+
+The Std. of the participants' means is less variable (16) than in the
+condition coded +0.5 (194). That's weird and is probably misestimated
+because the model is too complex (overparameterised for the given data).
+Let's try to fit a simpler model by removing the correlation parameter,
+which assumes the covariances are zero:
+
+```{r}
+m <- lme4::lmer(rt~cond + 
+                  (1+cond||subj) + 
+                  (1+cond||item), 
+                data = df_gibsonwu)
+summary(m)
+```
+
+This singular fit error disapperas and the variance Std.Dev. makes more
+sense.
+
+## Ch. 1 Exercises
+
+#### Exercise 1.1 Practice using the pnorm function - Part 1
+
+Given a normal distribution with mean 500 and standard deviation 100,
+use the pnorm function to calculate the probability of obtaining values
+between 200 and 800 from this distribution.
+
+```{r}
+pnorm(800, 500, 100) - pnorm(200, 500, 100)
+```
+
+#### Exercise 1.2 Practice using the pnorm function - Part 2
+
+Calculate the following probabilities. Given a normal distribution with
+mean 800 and standard deviation 150, what is the probability of
+obtaining:
+
+a score of 700 or less a score of 900 or more a score of 800 or more
+
+```{r}
+pnorm(700, 800, 150)
+pnorm(900, 800, 150, lower.tail=F)
+pnorm(800, 800, 150, lower.tail=F)
+```
+
+#### Exercise 1.3 Practice using the pnorm function - Part 3
+
+Given a normal distribution with mean 600 and standard deviation 200,
+what is the probability of obtaining:
+
+a score of 550 or less. a score between 300 and 800. a score of 900 or
+more.
+
+```{r}
+pnorm(550, 600, 200)
+pnorm(800, 600, 200) - pnorm(300, 600, 200)
+pnorm(900, 600, 200, lower.tail = F)
+```
+
+#### Exercise 1.4 Practice using the qnorm function - Part 1
+
+Consider a normal distribution with mean 1 and standard deviation 1.
+Compute the lower and upper boundaries such that:
+
+the area (the probability) to the left of the lower boundary is 0.10.
+the area (the probability) to the left of the upper boundary is 0.90.
+
+```{r}
+qnorm(c(.9,.1), 1,1)
+```
+
+#### Exercise 1.5 Practice using the qnorm function - Part 2
+
+Given a normal distribution with mean 650 and standard deviation 125.
+There exist two quantiles, the lower quantile q1 and the upper quantile
+q2, that are equidistant from the mean 650, such that the area under the
+curve of the normal between q1 and q2 is 80%. Find q1 and q2.
+
+```{r}
+qnorm(c(.1,.9),650,125)
+```
+
+#### Exercise 1.6 Practice getting summaries from samples - Part 1
+
+Given data that is generated as follows:
+
+```{r}
+data_gen1 <- rnorm(1000, 300, 200)
+```
+
+Calculate the mean, variance, and the lower quantile q1 and the upper
+quantile q2, that are equidistant and such that the range of probability
+between them is 80%.
+
+```{r}
+mean(data_gen1)
+sd(data_gen1)
+qnorm(c(.1,.9),mean(data_gen1), sd(data_gen1))
+
+hist(data_gen1)
+```
+
+#### Exercise 1.7 Practice getting summaries from samples - Part 2.
+
+This time we generate the data with a truncated normal distribution from
+the package extraDistr. The details of this distribution will be
+discussed later in section 4.1 and in the Box 4.1, but for now we can
+treat it as an unknown generative process:
+
+```{r}
+data_gen2 <- extraDistr::rtnorm(1000, 300, 200, a = 0)
+```
+
+Calculate the mean, variance, and the lower quantile q1 and the upper
+quantile q2, that are equidistant and such that the range of probability
+between them is 80%.
+
+```{r}
+mean(data_gen2)
+sd(data_gen2)
+
+qnorm(c(.1,.9), mean(data_gen2), sd(data_gen2))
+
+hist(data_gen2)
+```
+
+#### Exercise 1.8 Practice with a variance-covariance matrix for a bivariate distribution.
+
+Suppose that you have a bivariate distribution where one of the two
+random variables comes from a normal distribution with mean
+$\mu$\textsubscript{X} = 600 and standard deviation
+$\sigma$\textsubscript{X} = 100, and the other from a normal
+distribution with mean $\mu$\textsubscript{Y} = 400 and standard
+deviation $\sigma$\textsubscript{Y} = 50. The correlation
+$\rho$\textsubscript{XY} between the two random variables is 0.4. Write
+down the variance-covariance matrix of this bivariate distribution as a
+matrix (with numerical values, not mathematical symbols), and then use
+it to generate 100 pairs of simulated data points. Plot the simulated
+data such that the relationship between the random variables X and Y is
+clear.
+
+```{r}
+## define a variance-covariance matrix:
+Sigma4 <- matrix(c(100^2, 100 * 50 * .4, # square sdX = 5^2, mean X * mean Y * their corr
+                  100 * 50 * .4, 50^2), # mean X * mean Y * their corr, square sdY = 10^2, 
+byrow = FALSE, ncol = 2
+)
+## generate data:
+corr4 <- MASS::mvrnorm(n = 100, # 100 data points
+                   mu = c(600, 400), # means for 2 variables
+                   Sigma = Sigma4) # make sigma the matrix we just defined
+# MASS::mvrnorm = "multivariate rnorm"
+plot(corr4[,1],corr4[,2]); corr4_plot <- recordPlot()
+```
+
+Generate two sets of new data (100 pairs of data points each) with
+correlation - 0.4 and 0, and plot these alongside the plot for the data
+with correlation 0.4.
+
+```{r}
+## define a variance-covariance matrix:
+SigmaMinus4 <- matrix(c(100^2, 100 * 50 * -.4, # square sdX = 5^2, mean X * mean Y * their corr
+                  100 * 50 * -.4, 50^2), # mean X * mean Y * their corr, square sdY = 10^2, 
+byrow = FALSE, ncol = 2
+)
+## generate data:
+corrMinus4 <- MASS::mvrnorm(n = 100, # 100 data points
+                   mu = c(600, 400), # means for 2 variables
+                   Sigma = SigmaMinus4) # make sigma the matrix we just defined
+# MASS::mvrnorm = "multivariate rnorm"
+plot(corrMinus4[,1],corrMinus4[,2]); corrMinus4_plot <- recordPlot()
+```
+
+```{r}
+## define a variance-covariance matrix:
+Sigma0 <- matrix(c(100^2, 100 * 50 * 0, # square sdX = 5^2, mean X * mean Y * their corr
+                  100 * 50 * 0, 50^2), # mean X * mean Y * their corr, square sdY = 10^2, 
+byrow = FALSE, ncol = 2
+)
+## generate data:
+corr0 <- MASS::mvrnorm(n = 100, # 100 data points
+                   mu = c(600, 400), # means for 2 variables
+                   Sigma = Sigma0) # make sigma the matrix we just defined
+# MASS::mvrnorm = "multivariate rnorm"
+plot(corr0[,1],corr0[,2]); corr0_plot <- recordPlot()
+```
+
+```{r}
+library(gridGraphics)
+ggpubr::ggarrange(corr4_plot,corrMinus4_plot,corr0_plot,
+                  nrow=1)
+```
+
+\newpage
+
+# Day 2
+
+Yesterday we look at the examples of *discrete* variables and
+*continuous* variables. In Bayesian, we're interested in how uncertain
+we are about the possible true values are: **uncertainty
+quantification** (uncertainty of $\mu$ and $\sigma$)
+
+-   probability density function (PMF) on the parameter is always the
+    output of Bayesian analysis
+
+-   uniform distribution: rectangle; certainty is constant cause we are
+    equally unsure
+
+## Lecture 1.2: Bayes' Rule
+
+Event A: the streets are wet Event B: it is raining
+
+Q: What's the probability of the streets being wet (B) *given that* it
+is raining? **P(A\|B)**
+
+P(A\|B) = P(A,B)/P(B), given P(B)\>0 P(A,B) = P(B,A)
+
+-   but in research we don't work with discrete events
+
+-   instead of *P(A\|B)*, we look at *f(y\|*$\theta$*)*, which
+    represents **probabiity density function** for a given
+    *distribution*
+
+-   given the data *y*, we assume some density distribution that
+    generated the data; basically *y* is our priors, $\theta$ represents
+    posterior distribution of parameters from given data
+
+-   f(y) ('f of y') =
+
+```{r}
+# density of a data point from a particular normal distribution
+dnorm(0.1,0,1) 
+# what is the density on the curve at data point 0.1, given a mean of 0 and sd of 1?
+```
+
+-   $\mu$ has some prior, as does $\sigma$ which has a uniform
+    distribution
+
+```{r}
+# produce random datapoint of sigma given a uniform distribution
+runif(1, min=0,max=1)
+```
+
+```{r}
+k = 46  # 46 succesess
+n = 100 # 100 trials
+theta <- seq(0,1,by=.01)
+options(scipen = 0); dbinom(k,n,theta); options(scipen=999)
+```
+
+### Beta distribution
+
+-   ranges 0-1
+
+-   can change the shape of the distribution by changing the parameters
+    (a and b), in R called shape1 and shape2
+
+-   a = number of successes you expect a prior
+
+-   b = number of failures
+
+-   the size of the parameters also control trial uncertainty;the higher
+    the numbers, the tighter (i.e., narrower) the curve
+
+-   if we don't have much prior knowledge, we can set a and b both to 1,
+    which would give us a uniform distribution, and an **uniformative**
+    prior
+
+-   if we have stronger prior knowledge/a strong belief that $\theta$
+    has a particular range of values, we can set a and b to have higher
+    values
+
+```{r}
+x <- 46
+n <- 100
+## Prior specification:
+a <- 210
+b <- 21
+binom_lh <- function(theta) {
+dbinom(x=x, size =n, prob = theta)
+}
+## normalizing constant:
+K <- 1/integrate(f = binom_lh, lower = 0, upper = 1)$value
+binom_scaled_lh <- function(theta) K * binom_lh(theta) # compute likelihood, scaling it with normalising constant
+```
+
+```{r, fig.width=6}
+library(ggplot2)
+## Likelihood
+p_beta <- ggplot(data = tibble::tibble(theta = c(0, 1)), aes(theta)) +
+  stat_function(
+    fun = dbeta,
+    args = list(shape1 = a, shape2 = b),
+    aes(linetype = "Prior")
+  ) +
+  ylab("density") +
+  stat_function(
+    fun = dbeta,
+    args = list(shape1 = x + a, shape2 = n - x + b), aes(linetype = "Posterior")
+  ) +
+  stat_function(
+    fun = binom_lh,
+    aes(linetype = "Non-scaled likelihood")
+  ) +
+  stat_function(
+    fun = binom_scaled_lh,
+    aes(linetype = "Scaled likelihood")
+  ) +
+  theme_bw() +
+  theme(legend.title = element_blank())
+p_beta
+```
+
+```{r}
+plot(theta, 
+     dbeta(theta,shape1=10,shape2=80), # distribution given priors of 10 succeses & 80 failures
+     type="l")
+```
+
+### Poisson distribution
+
+-   from Lecture 2.3
+-   can be used to model e.g., number of fixations in a region
+
+```{r}
+# simulate 10 random data points with Poisson distribution
+# lambda = expected rate of 'successes', e.g., number of regressions into a region
+(x<-rpois(n=10,lambda=3))
+
+x<-rpois(n=1000,lambda=3)
+```
+
+```{r}
+plot(x,dpois(x,lambda=3),
+     ylab="Probability")
+```
+
+### Gamma distribution
+
+-   in R, the a and b parameters are called *shape* and *scale*
+-   mean of gamma distr. = a/b
+-   variance of gramma distr. = a/b\^2
+
+```{r}
+round(rgamma(n=10, shape=3,scale=1),2)
+```
+
+```{r}
+# plot gamma distribution given your parameter values
+x<-seq(0,10,by=0.01)
+plot(x,dgamma(x,shape=3,scale=1),type="l",
+     ylab="density")
+```
+
+```{r}
+lambda <- rgamma(4000,shape=20,rate=7) # sample from the posterior distribution
+hist(lambda)
+```
+
+## Computational Bayesian
+
+```{r}
+library(brms)
+fit_press <- brm(rt ~ 1,
+data = df_spacebar,
+family = gaussian(),
+prior = c(
+prior(uniform(0, 60000), class = Intercept, lb = 0,
+ub = 60000),
+prior(uniform(0, 2000), class = sigma, lb = 0,
+ub = 2000)
+),
+chains = 4,
+iter = 2000,
+warmup = 1000
+)
+
+fit_press
+```
+
+```{r}
+# fit the model
+# The model specification:
+brm(rt ~ 1, data = df_spacebar,
+# The likelihood assumed:
+family = gaussian(),
+# The prior specification:
+prior = c(
+prior(uniform(0, 60000), class = Intercept),
+prior(uniform(0, 2000), class = sigma)
+),
+# Sampling specifications:
+chains = 4,
+iter = 2000,
+warmup = 1000
+)
+```
+
+\newpage
+
+# Day 3
+
+Can we say that a 95% CI (confidence) contains the true value of $\mu$
+with probability of 95%? i.e., P(lowerCI \< $\mu$ \< upperCI) = .95
+
+*No:* from a frequentist perspective, $\mu$ is a **point value**. It
+would have to be a **random variable** to talk about the probability of
+it lying within a range.
+
+Fisher and Pearson were working infields with very tightly controlled
+designs/high power. In such cases, frequentist is totally fine and
+p-values can be trusted.
+
+## Sampling algorithms
+
+Not from the textbook, somebody in the class requested this (slides
+02_sampling_algorithms.pdf/.Rmd)
+
+-   CDF (cumultive density function) has S shape, PDF is Gaussian
+
+-   CDF is like that cause f(x)*q* is plotted on the y-axis, and for PDF
+    along the x-axis
+
+-   random values sampled from a uniform distribution CDF will like
+    between 0 and 1, and the samples wil have a Gaussian distribution
+
+```{r}
+# sampling from normal distribution
+nsim<-10000
+samples<-rep(NA,nsim)
+for(i in 1:nsim){
+u <- runif(1,min=0,max=1)
+samples[i]<-qnorm(u)
+}
+hist(samples,freq=FALSE,
+main="Standard Normal")
+```
+
+```{r}
+nsim<-10000
+samples<-rep(NA,nsim)
+for(i in 1:nsim){
+u <- runif(1,min=0,max=1)
+samples[i]<-qexp(u)
+}
+hist(samples,freq=FALSE,main="Exponential")
+```
+
+```{r}
+# sampling from gamma distribution
+nsim<-10000
+samples<-rep(NA,nsim)
+for(i in 1:nsim){
+u <- runif(1,min=0,max=1)
+samples[i]<-qgamma(u,rate=50,shape=50)
+}
+hist(samples,freq=FALSE,main="Gamma")
+# shape = 'a' paramter (shape1); number of success
+# rate = 'b' parameter (shape2); number of failures
+# scale = inverse of rate
+```
+
+```{r}
+# play around with vaues of shape and rate to see how it affects the distribution
+x = seq(0,1000,by=.01)
+
+plot(x,dgamma(x,
+              shape = 100, # no. of successes
+              rate = 50), # no. of failures
+     type = "l")
+```
+
+## Computational Bayes continued
+
+```{r}
+fit_press <- brm(rt ~ 1,
+data = df_spacebar,
+family = gaussian(),
+prior = c(
+prior(uniform(0, 60000), class = Intercept, lb = 0,
+ub = 60000),
+prior(uniform(0, 2000), class = sigma, lb = 0,
+ub = 2000)
+),
+chains = 4,
+iter = 2000,
+warmup = 1000
+)
+
+plot(fit_press)
+```
+
+Plot with shinystan for some diagnostic plots.
+
+```{r, eval = F}
+# try with shinystan
+# install.packages("shinystan")
+library(shinystan)
+shinystan::launch_shinystan(fit_press)
+```
+
+Extract posteriors from the model and compute summary stats:
+
+```{r}
+as_draws_df(fit_press) %>% head(3)
+```
+
+What happens if we change the prior and make it very tight/informative?
+
+```{r}
+fit_press_inform <- brm(rt ~ 1,
+data = df_spacebar,
+family = gaussian(),
+prior = c(
+prior(uniform(0, 50), class = Intercept, lb = 0,
+ub = 50),
+prior(uniform(0, 20), class = sigma, lb = 0,
+ub = 20)
+),
+chains = 4,
+iter = 2000,
+warmup = 1000
+)
+
+plot(fit_press_inform)
+```
+
+This produces a biased posterior based on unreasonable priors.
+
+## Prior Predictive distributions
+
+1.  Take one sample from each of the priors
+
+```{r}
+mu<-runif(1,min=0,max=60000)
+sigma<-runif(1, 0, 2000)
+```
+
+2.  Plug those samples into the probability density/mass function used
+    as the likelihood in the model to generate a data set
+
+```{r}
+y_pred_1<-rnorm(n=5,mu,sigma)
+y_pred_1
+```
+
+-   each smaple is an imaginary or potential data set
+
+-   there's code for generating prior predictive daa in R
+
+-   continuum of priors: flat/uninformative, regularising/weakly
+    informative, principled, informative
+
+## Lecture 3.4 Sensitiviy analysis
+
+```{r}
+library(brms)
+# fit the model with informative priors
+fit_press <- brm(rt ~ 1,
+data = df_spacebar,
+family = gaussian(),
+prior = c(
+prior(uniform(10,400), class = Intercept, lb = 10,
+ub = 400),
+prior(uniform(10,100), class = sigma, lb = 10,
+ub = 100)
+),
+chains = 4,
+iter = 2000,
+warmup = 1000
+)
+```
+
+- Bayesian p-hacking: using an informative prior without running a sensitivy analysis, comparing posteriors fro a range of priors (uniformative, informative/principled, and when relevant a competing informative/principled prior)
+
+```{r}
+as_draws_df(fit_press)$b_Intercept %>% quantile(c(0.025, .975))
+```
+
+## Posterior predictive distributions
+
+Can plot simulated posteriors (blue lines) and observed data (thicker line). Here, we see the prior was far too informative, as the curves don't have similar range/peak (along x-axis).
+
+```{r}
+pp_check(fit_press, ndraws = 100, type = "dens_overlay")
+```
+
+## Lecture 3.6 - Log-normal likelihood
+
+```{r}
+mu <- 6
+sigma <- 0.5
+N <- 500000
+# Generate N random samples from a log-normal distribution
+sl <- rlnorm(N, mu, sigma)
+```
+
+- Shravan has info on BoxCox test in his LM lecture notes (gitHub)
+  - 
+
+Generate prior predictive distributions
+
+```{r}
+data("df_spacebar")
+# create function
+normal_predictive_distribution <-
+  function(mu_samples, sigma_samples, N_obs) {
+    # empty data frame with headers:
+    df_pred <- tibble(
+      trialn = numeric(0),
+      rt_pred = numeric(0),
+      iter = numeric(0)
+    )
+    # i iterates from 1 to the length of mu_samples,
+    # which we assume is identical to
+    # the length of the sigma_samples:
+    for (i in seq_along(mu_samples)) {
+      mu <- mu_samples[i]
+      sigma <- sigma_samples[i]
+      df_pred <- bind_rows(
+        df_pred,
+        tibble(
+          trialn = seq_len(N_obs), # 1, 2,... N_obs
+          rt_pred = rnorm(N_obs, mu, sigma),
+          iter = i
+        )
+      )
+    }
+    df_pred
+  }
+
+N_samples <- 1000
+N_obs <- nrow(df_spacebar) # n = whatever it is for the dataset
+mu_samples <- runif(N_samples, 0, 11) # 1000 samples for mu
+sigma_samples <- runif(N_samples, 0, 1) # 1000 samples for sigma
+prior_pred_ln <- normal_predictive_distribution( # this function takes vector of samples of mu and sigma and produces the number of observed data points repeated
+mu_samples = mu_samples,
+sigma_samples = sigma_samples,
+N_obs = N_obs
+) %>%
+mutate(rt_pred = exp(rt_pred)) # exp() cause we had log transformed
+```
+
+- can also use the brm function and put in a fake dataset (df_spacebar_ref with empty colmobe 'rt') and plugging it into our model
+  - because brm always assumes some data is put into the model (But we're useing a dummy dataset), but will take the lognormal() instead of gaussian(), specify priors, and use 'sample_prior="only"', so brm will only produce prior predictive data
+  
+```{r}
+df_spacebar_ref <- df_spacebar %>%
+mutate(rt = rep(1, n()))
+fit_prior_press_ln <- brm(rt ~ 1,
+data = df_spacebar_ref,
+family = lognormal(),
+prior = c(
+prior(normal(6, 1.5), class = Intercept),
+prior(normal(0, 1), class = sigma)
+),
+sample_prior = "only",
+control = list(adapt_delta = .9)
+)
+```
+  
+```{r}
+# _ln for log normal
+fit_press_ln <- brm(rt ~ 1,
+data = df_spacebar,
+family = lognormal(),
+prior = c(
+prior(normal(6, 1.5), class = Intercept),
+prior(normal(0, 1), class = sigma)
+)
+)
+```
+
+## Lecture 3.7 - Computational Bayes
+
+Same model as above:
+
+```{r}
+# only run this if you need to (exact same as above chunk)
+# fit_press_ln <- brm(rt ~ 1,
+# data = df_spacebar,
+# family = lognormal(),
+# prior = c(
+# prior(normal(6, 1.5), class = Intercept),
+# prior(normal(0, 1), class = sigma)
+# )
+# )
+```
+
+Back transform to raw (from log)
+
+```{r}
+estimate_ms <- exp(as_draws_df(fit_press_ln)$b_Intercept) 
+c(mean = mean(estimate_ms), quantile(estimate_ms, probs = c(.025, .975))) # distribution of predicated average reading times, the range over which we can be 95% sure the true value lies
+
+# plot
+pp_check(fit_press_ln, ndraws = 100)
+
+pp_check(fit_press, type = "stat", stat = "min")+ ggtitle("Normal model")
+
+pp_check(fit_press_ln, type = "stat", stat = "min") + ggtitle("Log-normal model") # _ln for log normal
+```
+
+## Lecture 4.1 - Regression models
+
+Example experiment: dot tracking
+- RQ: how does attentional load affect pupil size
+- DV: pupil size (in abstract units)
+
+```{r}
+data("df_pupil_pilot")
+df_pupil_pilot$p_size %>% summary()
+```
+
+```{r}
+qnorm(c(.025, .975), mean = 1000, sd = 500)
+```
+
+```{r}
+extraDistr::qtnorm(c(.025,0.975), mean = 0, sd = 1000, a = 0)
+```
+
+### Adding a predictor to your model
+
+- contrast coding is a form of centring
+- Shravan doesn't use +/-.5 in dummy coding because the interaction is scaled down (in half), as demonstrated below
+```{r}
+data("df_persianE1")
+head(df_persianE1)
+```
+
+This data is repeated measures 2x2. 
+Arbitrary condition labels:
+- a = short and predicatble
+- b = short and unpredictable
+- c = long predicatbe
+- d = long unpredictable
+
+```{r}
+# set sum contrasts with +/- 1
+df_persianE1$ME_p1 <- ifelse(df_persianE1$predability == "predictble", +1, -1)
+df_persianE1$ME_d1 <- ifelse(df_persianE1$distance == "short", +1, -1)
+
+# set sum contrasts with +/- .5
+df_persianE1$ME_p5 <- ifelse(df_persianE1$predability == "predictble", +.5, -.5)
+df_persianE1$ME_d5 <- ifelse(df_persianE1$distance == "short", +.5, -.5)
+
+# two new columns now
+head(df_persianE1)
+```
+
+```{r}
+# get interaction terms
+df_persianE1$Int1 <- df_persianE1$ME_p1 * df_persianE1$ME_d1
+df_persianE1$Int5 <- df_persianE1$ME_p5 * df_persianE1$ME_d5
+head(df_persianE1)
+```
+
+
+In the output, the interaction of Int1 has the right scale, but the interaction in Int5 is scaled down.
+
+### Ch. 3 exercises
+
+#### Exercise 3.1 A simple linear model.
+
+a. Fit the model fit_press with just a few iterations, say 50 iterations (set warmup to the default of 25, and use four chains). Does the model converge?
+
+```{r}
+library(brms)
+fit_press_1a <- brm(rt ~ 1,
+data = df_spacebar,
+family = gaussian(),
+prior = c(
+prior(uniform(0, 60000), class = Intercept, lb = 0,
+ub = 60000),
+prior(uniform(0, 2000), class = sigma, lb = 0,
+ub = 2000)
+),
+chains = 4,
+iter = 50,
+warmup = 25
+)
+
+plot(fit_press_1a)
+pp_check(fit_press_1a, ndraws = 100, type = "dens_overlay")
+```
+
+*My answer: yes model coverges.*
+
+b. Using normal distributions, choose priors that better represent your assumptions/beliefs about response times. To think about a reasonable set of priors for $\mu$ and $\sigma$, you should come up with your own subjective assessment about what you think a reasonable range of values can be for $\mu$ and how much variability might happen. There is no correct answer here, we’ll discuss priors in depth in chapter 6.
+
+```{r}
+library(brms)
+
+fit_press_1b <- brm(rt ~ 1,
+data = df_spacebar,
+family = gaussian(),
+prior = c(
+prior(normal(100, 4000), class = Intercept, lb = 100,
+ub = 4000),
+prior(normal(20, 50), class = sigma, lb = 20,
+ub = 50)
+),
+chains = 4,
+iter = 50,
+warmup = 25
+)
+
+plot(fit_press_1b)
+pp_check(fit_press_1b, ndraws = 100, type = "dens_overlay")
+```
+
+#### Exercise 3.2 Revisiting the button-pressing example with different priors.
+
+a. Can you come up with very informative priors that influence the posterior in a noticeable way (use normal distributions for priors, not uniform priors)? Again, there are no correct answers here; you may have to try several different priors before you can noticeably influence the posterior.
+
+```{r}
+library(brms)
+fit_press_2a <- brm(rt ~ 1,
+data = df_spacebar,
+family = gaussian(),
+prior = c(
+prior(normal(120, 160), class = Intercept, lb = 120,
+ub = 160),
+prior(normal(20, 40), class = sigma, lb = 20,
+ub = 40)
+),
+chains = 4,
+iter = 50,
+warmup = 25
+)
+
+plot(fit_press_2a)
+pp_check(fit_press_2a, ndraws = 100, type = "dens_overlay")
+```
+
+b. Generate and plot prior predictive distributions based on this prior and plot them.
+
+```{r, eval = F}
+fit_press_2b <- brm(rt ~ 1,
+                 data = df_spacebar,
+                 family = gaussian(),
+                 prior = c(
+                   prior(normal(120, 160), class = Intercept, lb = 120, ub = 160),
+                   prior(normal(20, 40), class = sigma, lb = 20, ub = 40)
+                 ),
+                 chains = 4,
+                 iter = 50,
+                 warmup = 25,
+                 ## uncomment for prior predictive:
+                 sample_prior = "only"
+                 ## uncomment when dealing with divergent transitions
+                 ## control = list(adapt_delta = .9)
+)
+
+## Plot prior predictive distribution of statistical summaries:
+pp_check(fit_press_2b, ndraws = 100, type = "stat", stat = "mean",
+         prefix = "ppd")
+```
+
+```{r, eval = F}
+options(sci_pen=0)
+
+N_samples <- 1000
+N_obs <- nrow(df_spacebar) # n = whatever it is for the dataset
+mu_samples <- runif(N_samples, 120, 160) # 1000 samples for mu
+sigma_samples <- runif(N_samples, 20, 40) # 1000 samples for sigma
+
+post_pred_2c <- normal_predictive_distribution( # this function takes vector of samples of mu and sigma and produces the number of observed data points repeated
+mu_samples = mu_samples,
+sigma_samples = sigma_samples,
+N_obs = N_obs
+) %>%
+mutate(rt_pred = exp(rt_pred)) # exp() cause we had log transformed
+
+
+```
+
+c. Generate posterior predictive distributions based on this prior and plot them.
+
+```{r, eval = F}
+posterior_predict(fit_press)
+plot(fit_press_2b)
+# posterior predictive check
+pp_check(fit_press_2b)
+
+## Plot poterior predictive distribution of statistical summaries:
+pp_check(fit_press_2b, ndraws = 100, type = "stat", stat = "mean",
+         prefix = "ppc")
+```
+
+#### Exercise 3.3 Posterior predictive checks with a log-normal model.
+
+a. For the log-normal model fit_press_ln, change the prior of $\sigma$ so that it is a log-normal distribution with location ($\mu$) of -2 and scale ($\sigma$) of .5. What does such a prior imply about your belief regarding button-pressing times in milliseconds? Is it a good prior? Generate and plot prior predictive distributions. Do the new estimates change compared to earlier models when you fit the model?
+
+```{r}
+location <- -2 # mu
+scale <- .5 # sigma
+
+logsd <- exp(location + scale^2)*sqrt(exp(scale^2)-1)
+
+# _ln for log normal
+fit_press_ln <- brm(rt ~ 1,
+data = df_spacebar,
+family = lognormal(),
+prior = c(
+prior(normal(6, 1.5), class = Intercept),
+prior(normal(0, 1), class = sigma)
+)
+)
+```
+
+b. For the log-normal model, what is the mean (rather than median) time that takes to press the space bar, what is the standard deviation of the response times in milliseconds?
+
+#### Exercise 3.4 A skew normal distribution.
+
+Would it make sense to use a “skew normal distribution” instead of the lognormal? The skew normal distribution has three parameters: location $\xi$ (pronounced xi), scale $\omega$ (omega), and shape $\alpha$. The distribution is right skewed if $\alpha$ > 0, is left skewed if $\alpha$ < 0, and is identical to the regular normal distribution if $\alpha$ = 0. For fitting this in brms, one needs to change family and set it to skew_normal(), and add a prior of class = alpha (location remains class = Intercept and scale, class = sigma).
+
+a. Fit this model with a prior that assigns approximately 95\% of the prior probability of alpha to be between 0 and 10.
+
+```{r}
+
+```
+
+b. Generate posterior predictive distributions and compare the posterior distribution of summary statistics of the skew normal with the normal and log-normal.
+
+```{r}
+
+```
+
+### From dataset from a course participant
+
+```{r, eval=F}
+## setting priors
+# mu intercept+
+# sigma = residual error
+# sd = spread of predictors
+# exp(intercept+sigma*sd)-exp(intercept)
+exp(6.5+.5*1)-exp(6.5)
+# file = "mod_1" # save your model
+```
+
+\newpage
+
+# Day 4
+
+## Lecture 4.1 - Regression models
+
+- pilot data helps work out priors
+
+```{r}
+library(bcogsci)
+df_pupil_pilot$p_size %>% summary()
+```
+
+Okay, let's say our prior is *Normal(1000,500)*:
+
+```{r}
+qnorm(c(.025,.975), mean = 1000, sd = 500)
+```
+
+Then an uninformative prior truncated at 0 (indicated by `a = 0`) would be:
+
+```{r}
+extraDistr::qtnorm(c(.025,.975), mean = 0, sd = 1000, a = 0)
+# a = 0 indicates a truncated normal distribution (truncated at the left by zero, meaning no negative values)
+```
+
+This our expected range of standard deviation with the flat prior.
+
+But really we care about Beta. Here we start with an agnostic position, with priors not truncated at 0 meaning it allows for negative values (i.e., that pupil size could increase or decrease with an increase of cognitive load). i.e., like a two-sided t-test.
+
+```{r}
+qnorm(c(.025, .975), mean = 0, sd = 100)
+```
+
+```{r}
+(df_pupil <- df_pupil %>%
+mutate(c_load = load - mean(load)))
+```
+
+```{r}
+# here we will get the posterior 
+fit_pupil <- brm(p_size ~ 1 + c_load,
+data = df_pupil,
+family = gaussian(),
+prior = c(
+prior(normal(1000, 500), class = Intercept),
+prior(normal(0, 1000), class = sigma),
+prior(normal(0, 100), class = b, coef = c_load)
+)
+)
+# if we add 'sample_prior = "only"' the model will ignore the data and only generate prior predictive checks
+
+```
+
+- `pp_check` spits out either posteriior or prior predictive checks depending on what you plug into it (a model with only prior or with posterior)
+
+```{r}
+plot(fit_pupil)
+```
+
+We see in b_c_load the slope: it seems an increase in one unit of cognitive load corresponds to an increase in pupil size by about 30 units, with a spread of about 10 to 60 units. This is a pretty wide spread.
+
+If we want to say that we have **evidence** that an increase in cognitive load corresponds to an increase in pupil size, we need a **model comparison**. You *cannot argue for evidence without doing a model comparison*. Evidence is a likelihood ratio, we should compare two models and the better model has a higher lik.ratio.
+
+```{r, echo = F, eval = T}
+short_summary <- function (x, digits = 2, ...)
+{
+  x<- summary(x)
+  cat("...\n")
+    # cat(" Family: ")
+    # cat(summarise_families(x$formula), "\n")
+    # cat("  Links: ")
+    # cat(summarise_links(x$formula, wsp = 9), "\n")
+    # cat("Formula: ")
+    # print(x$formula, wsp = 9)
+    # cat(paste0("   Data: ", x$data_name, " (Number of observations: ",
+        # x$nobs, ") \n"))
+    if (!isTRUE(nzchar(x$sampler))) {
+        cat("\nThe model does not contain posterior samples.\n")
+    }
+    else {
+        final_samples <- ceiling((x$iter - x$warmup)/x$thin *
+            x$chains)
+        # cat(paste0("Samples: ", x$chains, " chains, each with iter = ",
+        #     x$iter, "; warmup = ", x$warmup, "; thin = ", x$thin,
+        #     ";\n", "         total post-warmup samples = ", final_samples,
+        #     "\n\n"))
+        if (nrow(x$prior)) {
+            cat("Priors: \n")
+            print(x$prior, show_df = FALSE)
+            cat("\n")
+        }
+        if (length(x$splines)) {
+            cat("Smooth Terms: \n")
+            brms:::print_format(x$splines, digits)
+            cat("\n")
+        }
+        if (length(x$gp)) {
+            cat("Gaussian Process Terms: \n")
+            brms:::print_format(x$gp, digits)
+            cat("\n")
+        }
+        if (nrow(x$cor_pars)) {
+            cat("Correlation Structures:\n")
+            brms:::print_format(x$cor_pars, digits)
+            cat("\n")
+        }
+        if (length(x$random)) {
+            cat("Group-Level Effects: \n")
+            for (i in seq_along(x$random)) {
+                g <- names(x$random)[i]
+                cat(paste0("~", g, " (Number of levels: ", x$ngrps[[g]],
+                  ") \n"))
+                brms:::print_format(x$random[[g]], digits)
+                cat("\n")
+            }
+        }
+        if (nrow(x$fixed)) {
+            cat("Population-Level Effects: \n")
+            brms:::print_format(x$fixed, digits)
+            cat("\n")
+        }
+        if (length(x$mo)) {
+            cat("Simplex Parameters: \n")
+            brms:::print_format(x$mo, digits)
+            cat("\n")
+        }
+        if (nrow(x$spec_pars)) {
+            cat("Family Specific Parameters: \n")
+            brms:::print_format(x$spec_pars, digits)
+            cat("\n")
+        }
+        if (length(x$rescor_pars)) {
+            cat("Residual Correlations: \n")
+            brms:::print_format(x$rescor, digits)
+            cat("\n")
+        }
+        # cat(paste0("Samples were drawn using ", x$sampler, ". "))
+        if (x$algorithm == "sampling") {
+            #cat(paste0("For each parameter, Bulk_ESS\n", "and Tail_ESS are effective sample size measures, ",
+             #   "and Rhat is the potential\n", "scale reduction factor on split chains ",
+              #  "(at convergence, Rhat = 1)."))
+        }
+        cat("...\n")
+    }
+    invisible(x)
+}
+```
+
+H1: $\beta$ > 0
+
+Given the data and the model that I have, we can have support for the H1 or not.
+
+ROPE method: check if you have a pattern in your data consistent with the predicted pattern or not (based on your priors, either from pilot data, past data, or the literature). 
+
+```{r}
+# short_summary is a function written in the source code for the slides; the code is available in the source code for this file
+short_summary(fit_pupil)
+```
+
+You can generate data for different levels of `c_load`. For c_load= 0 (because load is not centered, this is the baseline condition), so lots of variabilitiy. The average load
+
+```{r}
+for (l in 0:4) { # for each level of the predictor load
+  df_sub_pupil <- filter(df_pupil, load == l)
+  p <- pp_check(fit_pupil,
+    type = "dens_overlay",
+    ndraws = 100,
+    newdata = df_sub_pupil
+  ) +
+    geom_point(data = df_sub_pupil, aes(x = p_size, y = 0.0001)) +
+    ggtitle(paste("load: ", l)) +
+    coord_cartesian(xlim = c(400, 1000))
+  print(p)
+}
+```
+
+If you have n conditions, you have n-1 comparions.
+
+```{r}
+fit_pupil
+```
+
+## Lecture 4.3
+
+Looking at the effect of trial on the button-pressing data.
+
+```{r}
+df_spacebar <- df_spacebar %>%
+mutate(c_trial = trial - mean(trial))
+```
+
+The priors have to be defined on the log scale.
+
+$\alpha$ ~ *Normal(6,1.5)*
+
+```{r}
+df_spacebar_ref <- df_spacebar %>%
+mutate(rt = rep(1, n()))
+fit_prior_press_trial <- brm(rt ~ 1 + c_trial,
+data = df_spacebar_ref,
+family = lognormal(),
+prior = c(
+prior(normal(6, 1.5), class = Intercept),
+prior(normal(0, 1), class = sigma),
+prior(normal(0, 1), class = b, coef = c_trial)
+),
+sample_prior = "only", # predictive priors ONLY, will ignore the data
+control = list(adapt_delta = .9)
+)
+```
+
+```{r}
+median_diff <- function(x) {
+median(x - lag(x), na.rm = TRUE)
+}
+pp_check(fit_prior_press_trial,
+type = "stat",
+stat = "median_diff",
+# show only prior predictive distributions
+prefix = "ppd",
+# each bin has a width of 500ms
+binwidth = 500) +
+# cut the top of the plot to improve its scale
+coord_cartesian(ylim = c(0, 50))+theme_bw()
+```
+
+What if we change to more informative priors?
+
+$\beta$ ~ *Normal(0,.01)*
+
+```{r}
+exp(6) - exp(6 + 0.02)
+# 0.02 because 2 times the sd (0.01) will account for alpha = .05 (the two tails at either end of the distribution)
+```
+
+Prior predictive distribution
+
+```{r}
+# generate prior predicitve distribution
+fit_prior_press_trial <- brm(rt ~ 1 + c_trial,
+data = df_spacebar_ref,
+family = lognormal(),
+prior = c(
+prior(normal(6, 1.5), class = Intercept),
+prior(normal(0, 1), class = sigma),
+prior(normal(0, .01), class = b, coef = c_trial)
+),
+sample_prior = "only", # again, just priors
+control = list(adapt_delta = .9)
+)
+```
+
+Plot prior predictive distr.
+
+```{r}
+median_diff <- function(x) {
+median(x - lag(x), na.rm = TRUE)
+}
+pp_check(fit_prior_press_trial,
+type = "stat",
+stat = "median_diff",
+# show only prior predictive distributions
+prefix = "ppd")
+# each bin has a width of 500ms
+# binwidth = 500)
+```
+
+Posterior predictive distribution
+
+```{r}
+# generate posterior
+fit_press_trial <- brm(rt ~ 1 + c_trial,
+data = df_spacebar,
+family = lognormal(),
+prior = c(
+prior(normal(6, 1.5), class = Intercept),
+prior(normal(0, 1), class = sigma),
+prior(normal(0, .01), class = b, coef = c_trial)
+)
+)
+```
+
+Plot. 
+
+```{r, eval = F}
+pp_check(fit_press_trial)
+```
+
+## Lecture 4.5: Logistic regression
+
+- IV: set size (we'll treat it as continuous)
+- DV: binary responses (0,1): Bernoulli distr.
+
+```{r}
+head(df_recall)
+
+# Set sizes (we'll treat it as a continuous IV) in the data set:
+df_recall$set_size %>%
+unique() %>% sort()
+
+# Trials by set size
+df_recall %>%
+group_by(set_size) %>%
+count()
+```
+
+## Lecture 4.6: Logistic regression
+
+To determine priors in the log odds space:
+
+`qlogis()`
+`plogis()`
+
+```{r}
+alpha <- rnorm(1000,0,1.5)
+hist(alpha)
+hist(plogis(alpha))
+```
+
+## Lecture 4.8 - Hierarchical regression models
+
+```{r}
+head(df_eeg <- df_eeg %>%
+mutate(c_cloze = cloze - mean(cloze)))
+```
+
+```{r}
+# pre-define priors for your model to keep the syntax cleaner
+prior_v <-
+c(
+prior(normal(0, 10), class = Intercept),
+prior(normal(0, 10), class = b, coef = c_cloze),
+prior(normal(0, 50), class = sigma),
+prior(normal(0, 20), class = sd, coef = Intercept, group = subj), # prior for intercept variance by participant
+prior(normal(0, 20), class = sd, coef = c_cloze, group = subj)
+)
+```
+
+```{r}
+fit_N400_v <- brm(n400 ~ c_cloze + (c_cloze || subj),
+prior = prior_v, # priors we defined in the previous chunk
+data = df_eeg
+)
+```
+
+```{r}
+prior_h <- c(
+  prior(normal(0, 10), class = Intercept), # intercept priors
+  prior(normal(0, 10), class = b, coef = c_cloze), # slope
+  prior(normal(0, 50), class = sigma), # sd priors
+  prior(
+    normal(0, 20),
+    class = sd,
+    coef = Intercept, # by-subject intercept
+    group = subj
+  ),
+  prior(
+    normal(0, 20),
+    class = sd,
+    coef = c_cloze, # by-subject slope
+    group = subj
+  ),
+  prior(lkj(2), class = cor, group = subj) # lkj prior on the correlation parameter rho for by-subject random effects
+)
+fit_N400_h <- brm(n400 ~ c_cloze + (c_cloze | subj),
+                  prior = prior_h,
+                  data = df_eeg)
+
+plot(fit_N400_h)
+```
+
+There's a new list of priors in this model with the `prior(lkj(2),...` line. **LKJ prior**: regularising prior for all the corelations; this is why we don't run into convergence issues with sparse data with hierarchical models in brm.
+
+In the pot, the correlation parameter `cor_subj__intercept_c_cloze` is wide spread cause there's not much data. This is telling us it's being estimated with great uncertainty. The spread is so large we didn't learn much. What would happen if we fit a frequentist model?
+
+```{r}
+fit_N400_freq <- lmer(n400 ~ c_cloze + (c_cloze | subj),
+                      # prior = prior_h,
+                      data = df_eeg)
+summary(fit_N400_freq)
+```
+
+## Shrinkage
+
+LMMs allow you to take into account not ony the effect of the individuals but also the entire average behaviour from your sample. Individual differences: one extreme way to investigate ind. diff's would be to run a separate model for each px, this is called the 'no pooling' method and ignores the global average. 'Complete pooling' is the other extreme, ignoring the individual differences andfocussing on the global average.
+
+'Partial pooling' model is a compromise between 'no pooling' and 'complete pooling', computing both the global average and the individual-level averageds/differences.
+
+- shrinking individual estimates towards to the global mean
+- this corrects for px with extreme behaviour
+- if a participant's data is not extreme, the shrunken estimate will be the same as the pre-shrunken estimate
+- it is skeptical of the indidivual level data
+
+The practical implication of shrinkage:
+
+- the LMM is unaffected by missing data; even if you lose/delete half of a participant's data, the LMM estimate will be the same
+- shrinkage occurs automatically when running an LMM, we don't need to specify anything
+- it is present for both frequentist and Bayesian LMMs
+
+\newpage
+
+# Day 5
+
+## Bayes factor: model comparison and hyptotheis testing
+
+These notes follow Day5/05_modelcomparison.pdf
+
+if using Bayes' factor for hypo testing, you need to decide somehow how much data is enough to have a reliable effect size. One often has to decide how much money is needed for experiments, so you need to plan ahead. This paper gives an overview: 
+
+Vasishth, S., Yadav, H., Schad, D.J. et al. Sample Size Determination for Bayesian Hierarchical Models Commonly Used in Psycholinguistics. Comput Brain Behav (2022). https://doi.org/10.1007/s42113-021-00125-y
+
+In this paper, they repeatedly generated simulated data. Bayes' factor is necessary cause CrI's do not allow us to make claims regarding whether we have evidence for an effect or not.
+
+The posterior joint density for theta is dependent on the data and the model. You would prefer a model with a higher likelihood
+
+ANOVA is a likelihood ratio test. F-scores you get in an ANOVA is the squared t-test output from an ANOVA. A t-test is the same as as a simplified linear (mixed) model. So basically they're all the same thing, and the Bayes' Factor is just a Bayesian version of an ANOVA.
+
+```{r}
+dnorm(.1,mean=0,sd=1) # this is the likelihood of the observed data point given mu=0 & sd =1 (defaults)
+dnorm(.1,mean=0,sd=1, log=T) # on the log scale
+log(dnorm(x)) # or this way
+
+dnorm(.1, mean=3, sd=1, log=T) # the loglikelihood gets smaller (more negative) with the more difference between the mean and the observed data point
+dnorm(.01, mean = 0, sd=1, log=T) # the closer the mean and observed data point, the smaller the number
+dnorm(100,mean=100,sd=1,log=T)
+```
+
+### Intro
+
+```{r}
+## sample 100 iid data points:
+x<-rnorm(100)
+## compute log likelihood under mu=0
+(loglikmu0<-sum(dnorm(x,mean=0,sd=1,log=TRUE)))
+
+## compute log likelihood under mu=10
+(loglikmu10<-sum(dnorm(x,mean=10,sd=1,log=TRUE)))
+# sum of dnorm with log=T because otherwise you have to multiple all the small values of x, but if you log them then you just have to add them; computationally more convenient
+
+## the likelihood ratio is a difference of logliks
+## on the log scale:
+loglikmu0-loglikmu10
+# just look at the difference between the log likelihood of the two models
+# loglikmu0 is more likelihood (both have negative values, so if you subtract a 'smaller' negative number from a 'larger' negative number, you'll have a positive value)
+```
+
+```{r}
+library(bcogsci)
+head(df_gibsonwu) # 37 subject, 15 items, and reading times
+# let's check it's repeated measures:
+xtabs(~subj+type,df_gibsonwu) # multiple data points per px
+
+m <- lm(rt~type,data=df_gibsonwu) # this model is ignoring normality assuption
+acf(residuals(m)) # but residuals will be correlated, this is bad
+# blue dotted ines = 95% CIs; the lines after the first one should fall within these lines but they don't
+# all the variance of the model is being stored in the SD, but if we add random effect the variance is distributed to the within-subject variability, and the residuals will be fixed
+
+m2 <- lmer(rt~type + (1+type||subj) + (1|item), data=df_gibsonwu)
+summary(m2)
+acf(residuals(m2)) # there's still some correlation, but many of the lines have dropped, meaning the correlation was reduced. it's not fully reduced because this is not the full model.In Bayesian we can fit the full model, thereby removing the correlation between the variance terms
+```
+
+How we are going to use Bayes Factor. Imagine data from a single participant with 10 binary responses and 9 correct. This is a binomial likelihood, with n=10 and k=0 (model 1 = m1). Our $\theta$ could be 0.5, or it could have a variety of probabilities (e.g., .1 = 1/3, .5 = 1/3, and .9 = 1/3) (model 2 = m2).
+
+```{r}
+# marginal logLik of M1
+llM1 <- dbinom(x=9,10,prob=0.5) # M1
+
+# marginal logLik of M2:
+llM2 <- dbinom(9,10,prob=.1)*1/3 +
+dbinom(9,10,prob=.5)*1/3 +
+dbinom(9,10,prob=.9)*1/3
+
+# Bayes factor will be the difference between the 2
+1/(llM1/llM2) # not in log, so divide (not subtract, as above), and we want the RATIO so we compute the inverse (1 divided by...)
+# this tells us how much more likely M2 is compared ot M1
+# M2 is 13.5 times more likely than M1; this makes snes cause the prior on theta is more liberal
+
+# and something we should never do at home, is to run a brm model without any priors
+library(brms)
+mb <- brm(rt~type + (1+type|subj) + (1+type|item), data=df_gibsonwu)
+```
+
+
+If we want a highly probability of getting decisive evidence we run a simulation on existing datasets and run a large sample size (large # of participants, e.g., on Prolific).
+
+2x2 experiment with 48 items; create a second 48 set of items, bring participant back 2 weeks later. Or, run thousands of participants on Prolific with a single trial.
+
+```{r}
+bayes_factor(m0,m1) # be careful with the order!! Bayes Factor always starts with null model
+```
+
+Set up data
+
+```{r}
+library(bcogsci)
+data("df_gg05_rc")
+# set contrasts
+df_gg05_rc$so<-ifelse(df_gg05_rc$condition=="objgap",1,-1)
+xtabs(~so+condition,data=df_gg05_rc) # check contrast coding
+head(df_gg05_rc)
+```
+
+Standard frequentist
+
+```{r}
+# null model
+m0 <- lmer(RT ~ so + 
+             (1+so|subj) +
+             (1+so|item), data = df_gg05_rc)
+summary(m0)
+# singuar fit:: correlations are 1.00 so they're the problem, get rid of them with zcp
+m1 <- lmer(RT ~ so + 
+             (1+so||subj) +
+             (1+so||item), data = df_gg05_rc)
+# no complaints
+anova(m1,m0)
+```
+
+Report chi-square value from the anova, something like *the effect estimate was 51ms (Estimate from m1) with a confidence interval of 30-70 (+/-Error) with chi-square of 39, p<.001*.
+
+
+Define priors for full model
+
+```{r}
+priors <- c(set_prior("normal(6, 0.6)", class = "Intercept"),
+             set_prior("normal(0.12, 0.04)", class = "b", coef = "so"),
+             set_prior("normal(0, 0.1)", class = "sd"),
+             set_prior("normal(0, 0.5)", class = "sigma"),
+             set_prior("lkj(2)", class = "cor"))
+```
+
+run full model
+
+```{r}
+brm1 <- brm(RT ~ so + 
+              (1+so|subj) + (1+so|item), df_gg05_rc, 
+                    family=lognormal(), # equates to log transforming
+            prior=priors, 
+                    warmup=2000,
+                    iter=10000,
+                    chains = 4,
+                    cores=4,
+                    save_pars = save_pars(all = TRUE),
+                    control=list(adapt_delta=0.99, max_treedepth=15))
+
+# if you instead put log(RT), you'd have to put family = gaussian. instead, you can just put family =lognormal
+```
+
+```{r}
+boxplot(RT~condition,data=df_gg05_rc) # shows obj is heavily skewed by extreme values
+# but you can just log transform your data to down eight the extreme values
+boxplot(log(RT)~condition,data=df_gg05_rc) # this will lead to a smaller chisq because the skew is removved
+```
+
+Null priors 
+
+```{r}
+priorsNULL <- c(set_prior("normal(6, 0.6)", class = "Intercept"),
+             #set_prior("normal(0, 0.05)", class = "b", coef = "so"), # this is for the slope, and is left out cause in our null model we don't include a slope so we can't have a prior for it
+             set_prior("normal(0, 0.1)", class = "sd"),
+             set_prior("normal(0, 0.5)", class = "sigma"),
+             set_prior("lkj(2)", class = "cor"))
+```
+
+null model
+
+```{r}
+brm0 <- brm(RT ~ 1 + 
+              (1+so|subj) + (1+so|item), df_gg05_rc, 
+                    family=lognormal(), prior=priorsNULL, 
+                    warmup=2000,
+                    iter=10000,
+                    cores=4,
+                    save_pars = save_pars(all = TRUE),
+                    control=list(adapt_delta=0.99, max_treedepth=15),
+            file="brm0"# this line will save the model and automatically load it if it's in the parent folder (this script was run the DFG project so the file is saved in the DFG folder!)
+            )
+```
+
+Run Bayes factor
+
+```{r}
+bayes_factor(brm0,brm1)
+# Estimated Bayes factor in favor of brm0 over brm1: 0.17758
+bayes_factor(brm1,brm0)
+# Estimated Bayes factor in favor of brm1 over brm0: 5.68799
+```
+
+Evidence is in favour of the full model. Bayes factor computes an *estimate*, so it can fluctuate and will do so a lot with the lower number of iterations run on your models.
+
+***Frequentist*** post-hoc power analysis is a transformation of the p-value you've already computed, and so it's kind of useless to do. Never do it. It's okay to do a Bayesian post-hoc power analysis, though.
+
+Under an informative prior, i get a bayes factor of 10, and this informative prior comes from prior work etc etc. This is compared to an uniformative prior that had a lower bayes factor. To understand and use Bayesian, you just need to know what an *integral* is.
+
+### Exercise 5.2 
+
+You should be able to now fit a “maximal” model (correlated varying intercept and slopes for subjects and for items) assuming a log-normal likelihood.
+
+a. Examine the effect of relative clause attachment site (the predictor `c_cond`) on reading times RT ($\beta$).
+
+```{r}
+# set contrasts
+df_gg05_rc$so<-ifelse(df_gg05_rc$condition=="objgap",1,-1)
+# check contrasts
+xtabs(~so+condition,data=df_gg05_rc) # check contrast coding
+```
+
+set informative priors
+
+```{r}
+prior_inf <- c(set_prior("normal(6, 0.6)", class = "Intercept"),
+             set_prior("normal(0.12, 0.04)", class = "b", coef = "so"),
+             set_prior("normal(0, 0.1)", class = "sd"),
+             set_prior("normal(0, 0.5)", class = "sigma"),
+             set_prior("lkj(2)", class = "cor"))
+```
+
+```{r}
+ex5_2 <- brm(RT ~ so + 
+              (1+so|subj) + (1+so|item), df_gg05_rc, 
+                    family=lognormal(), # equates to log transforming
+            prior=prior_inf, 
+                    warmup=1000,
+                    iter=10000,
+                    chains = 4,
+                    cores=4,
+                    save_pars = save_pars(all = TRUE),
+                    control=list(adapt_delta=0.99, max_treedepth=15),
+            file = "SMLP22_models/ex5_2")
+```
+
+```{r}
+plot(ex5_2)
+```
+
+b. Estimate the median difference between relative clause attachment sites in milliseconds, and report the mean and 95\% CI.
+
+```{r}
+ex5_2
+
+fixef(ex5_2)
+ranef(ex5_2)
+coef(ex5_2)
+
+round(exp(fixef(ex5_2)[1,1]),1)
+```
+
+The median difference in milliseconds is `r round(exp(fixef(ex5_2)[1,1]),1)`.
+
+c. Do a sensitivity analysis. What is the estimate of the effect ($\beta$) under different priors? What is the difference in milliseconds between conditions under different priors?
+
+### Exercise 15.2
+
+
+
+### Exercise 15.3
+
+Is there evidence for the claim that subject relative clause are easier to process than object relative clauses?
+
+Consider again the reading time data coming from Experiment 1 of Grodner and Gibson (2005) presented in exercise 5.2. Try to quantify the evidence against the null model (no population-level reading times difference between SRC and ORC) relative to the following alternative models:
+
+a. \beta \sim \mathit{Normal}(0, 1)
+b. \beta \sim \mathit{Normal}(0, .1)
+c. \beta \sim \mathit{Normal}(0, .01)
+d. \beta \sim \mathit{Normal}_+(0, 1)
+e. \beta \sim \mathit{Normal}_+(0, .1)
+f. \beta \sim \mathit{Normal}_+(0, .01)
+
+(A \mathit{Normal}_+(.) prior can be set in `brms` by defining a lower boundary as 0, with the argument `lb = 0`.)
+
+What is the Bayes factor against the null and in favor of the alternative models a-f?
+
+```{r}
+priors_a <-
+ma <- 
+
+```
+
+## Post-hoc power analysis (Bayesian)
+
+We want to see if our effects are significant by chance or if we're adequately powered.
+
+```{r eval = F}
+posterior_predict()
+```
+
+
